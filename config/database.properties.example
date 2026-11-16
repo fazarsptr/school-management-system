@@ -1,0 +1,4 @@
+# Copy to database.properties and configure locally. Never commit real credentials.
+db.url=jdbc:mysql://localhost:3306/db_managesekolah
+db.username=root
+db.password=

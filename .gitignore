@@ -1,0 +1,95 @@
+# ==============================================================================
+# Build & Distribution Artifacts
+# ==============================================================================
+/build/
+build/
+/dist/
+dist/
+/nbbuild/
+nbbuild/
+/nbdist/
+nbdist/
+
+# Compiled Java Bytecode
+*.class
+**/*.class
+
+# Package archives generated locally
+*.war
+*.ear
+
+# ==============================================================================
+# NetBeans IDE & User-Specific Configuration
+# ==============================================================================
+/nbproject/private/
+nbproject/private/
+**/nbproject/private/
+private/
+nbproject/genfiles.properties
+
+# Other IDE & Editor Files
+.idea/
+*.iml
+.vscode/
+.settings/
+.classpath
+.project
+
+# ==============================================================================
+# Database Credentials & Local Configuration Files
+# ==============================================================================
+/config/database.properties
+config/database.properties
+config/*.properties
+!config/database.properties.example
+local.properties
+*.local.properties
+*.properties.local
+
+# Environment variables and secrets
+.env
+.env.*
+*.env
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+credentials.json
+secrets.*
+
+# ==============================================================================
+# SQL Dumps & Database Exports (Preserve ONLY database/schema.sql)
+# ==============================================================================
+*.sql
+*/*.sql
+**/*.sql
+!/database/schema.sql
+!database/schema.sql
+*.sql.gz
+*.sql.zip
+*.dump
+*.dump.*
+*.bak
+*.backup
+*dump*.sql
+*backup*.sql
+
+# ==============================================================================
+# Binary Libraries
+# ==============================================================================
+# Binary dependencies should be installed locally and not redistributed
+/lib/*.jar
+lib/*.jar
+
+# ==============================================================================
+# Operating System & Temporary Files
+# ==============================================================================
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
