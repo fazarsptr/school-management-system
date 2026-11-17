@@ -13,6 +13,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.Date;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
@@ -353,20 +357,63 @@ public class FormTambahSiswa extends javax.swing.JFrame {
     }//GEN-LAST:event_jpanelGradient1MouseDragged
 
     private void rSMaterialButtonRectangle2MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_rSMaterialButtonRectangle2MouseClicked
-        // Get values from form fields
-        String nama = txtNama1.getText();
-        String nisn = txtNama2.getText();
-        String jenisKelamin = rSComboMetro1.getSelectedItem().toString();
-        String tempatLahir = txtNama3.getText();
-        String tanggalLahir = tTanggal1.getText(); // Format: yyyy-MM-dd
-        String tingkatKelas = rSComboMetro2.getSelectedItem().toString();
+        // Retrieve and trim values from form fields
+        String nama = txtNama1.getText() != null ? txtNama1.getText().trim() : "";
+        String nisn = txtNama2.getText() != null ? txtNama2.getText().trim() : "";
+        String jenisKelamin = rSComboMetro1.getSelectedItem() != null ? rSComboMetro1.getSelectedItem().toString().trim() : "";
+        String tempatLahir = txtNama3.getText() != null ? txtNama3.getText().trim() : "";
+        String tanggalLahir = tTanggal1.getText() != null ? tTanggal1.getText().trim() : ""; // Format: yyyy-MM-dd
+        String tingkatKelas = rSComboMetro2.getSelectedItem() != null ? rSComboMetro2.getSelectedItem().toString().trim() : "";
 
-        // Validate input fields
-        if (nama.isEmpty() || nisn.isEmpty() || tempatLahir.isEmpty() || tanggalLahir.isEmpty()) {
+        // 1. Prevent submitting student records with empty or whitespace-only required fields
+        if (nama.isEmpty() || nisn.isEmpty() || tempatLahir.isEmpty() || tanggalLahir.isEmpty()
+                || jenisKelamin.isEmpty() || tingkatKelas.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Semua field harus diisi!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
+        // 2. Validate field lengths against database schema
+        if (nama.length() > 100) {
+            JOptionPane.showMessageDialog(this, "Nama siswa tidak boleh melebihi 100 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (tempatLahir.length() > 50) {
+            JOptionPane.showMessageDialog(this, "Tempat lahir tidak boleh melebihi 50 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 3. Validate student identification number (NISN): 10 numeric digits national format
+        if (!nisn.matches("^[0-9]{10}$")) {
+            JOptionPane.showMessageDialog(this, "NISN harus terdiri dari 10 digit angka!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 4. Validate date of birth: YYYY-MM-DD format, valid calendar date, and reject future dates
+        if (!tanggalLahir.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            JOptionPane.showMessageDialog(this, "Format tanggal tidak valid! Gunakan format YYYY-MM-DD.", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        LocalDate dob;
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd")
+                    .withResolverStyle(ResolverStyle.STRICT);
+            dob = LocalDate.parse(tanggalLahir, formatter);
+        } catch (DateTimeParseException e) {
+            JOptionPane.showMessageDialog(this, "Tanggal lahir tidak valid! Periksa kembali tanggal, bulan, dan tahun.", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (dob.isAfter(LocalDate.now())) {
+            JOptionPane.showMessageDialog(this, "Tanggal lahir tidak boleh di masa depan!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (dob.getYear() < 1900) {
+            JOptionPane.showMessageDialog(this, "Tahun lahir tidak valid!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 5. Database insertion (only executed when all validations pass)
         try {
             // Connect to database
             Connection conn = KoneksiDatabase.getKoneksi();
@@ -380,7 +427,7 @@ public class FormTambahSiswa extends javax.swing.JFrame {
             pstmt.setString(2, jenisKelamin);
             pstmt.setString(3, nisn);
             pstmt.setString(4, tempatLahir);
-            pstmt.setDate(5, java.sql.Date.valueOf(tanggalLahir)); // Convert to SQL Date
+            pstmt.setDate(5, java.sql.Date.valueOf(dob)); // Convert to SQL Date
             pstmt.setString(6, tingkatKelas);
 
             // Execute SQL
@@ -395,7 +442,6 @@ public class FormTambahSiswa extends javax.swing.JFrame {
                 // Clear form fields after successful save
                 clearFields();
 
-
                 // Close this form
                 //dispose();
             } else {
@@ -407,9 +453,11 @@ public class FormTambahSiswa extends javax.swing.JFrame {
             //onn.close();
 
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Error database: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
-        } catch (IllegalArgumentException e) {
-            JOptionPane.showMessageDialog(this, "Format tanggal tidak valid! Gunakan format YYYY-MM-DD", "Format Error", JOptionPane.ERROR_MESSAGE);
+            if (e.getErrorCode() == 1062 || (e.getMessage() != null && e.getMessage().toLowerCase().contains("duplicate"))) {
+                JOptionPane.showMessageDialog(this, "NISN sudah terdaftar di database!", "Database Error", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Error database: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }//GEN-LAST:event_rSMaterialButtonRectangle2MouseClicked
 

@@ -14,6 +14,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.Date;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
@@ -109,13 +113,63 @@ public class FormEditSiswa extends javax.swing.JFrame {
     }
     
     private void updateDataSiswa() {
-        String nama = txtNama1.getText();
-        String nisnBaru = txtNama2.getText(); // bisa berbeda dari nisn lama
-        String jenisKelamin = rSComboMetro1.getSelectedItem().toString();
-        String tempatLahir = txtNama3.getText();
-        String tanggalLahir = tTanggal1.getText();
-        String tingkat = rSComboMetro2.getSelectedItem().toString();
+        // Retrieve and trim values from form fields
+        String nama = txtNama1.getText() != null ? txtNama1.getText().trim() : "";
+        String nisnBaru = txtNama2.getText() != null ? txtNama2.getText().trim() : ""; // bisa berbeda dari nisn lama
+        String jenisKelamin = rSComboMetro1.getSelectedItem() != null ? rSComboMetro1.getSelectedItem().toString().trim() : "";
+        String tempatLahir = txtNama3.getText() != null ? txtNama3.getText().trim() : "";
+        String tanggalLahir = tTanggal1.getText() != null ? tTanggal1.getText().trim() : "";
+        String tingkat = rSComboMetro2.getSelectedItem() != null ? rSComboMetro2.getSelectedItem().toString().trim() : "";
 
+        // 1. Prevent submitting student records with empty or whitespace-only required fields
+        if (nama.isEmpty() || nisnBaru.isEmpty() || tempatLahir.isEmpty() || tanggalLahir.isEmpty()
+                || jenisKelamin.isEmpty() || tingkat.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Semua field harus diisi!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 2. Validate field lengths against database schema
+        if (nama.length() > 100) {
+            JOptionPane.showMessageDialog(this, "Nama siswa tidak boleh melebihi 100 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (tempatLahir.length() > 50) {
+            JOptionPane.showMessageDialog(this, "Tempat lahir tidak boleh melebihi 50 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 3. Validate student identification number (NISN): 10 numeric digits national format
+        if (!nisnBaru.matches("^[0-9]{10}$")) {
+            JOptionPane.showMessageDialog(this, "NISN harus terdiri dari 10 digit angka!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 4. Validate date of birth: YYYY-MM-DD format, valid calendar date, and reject future dates
+        if (!tanggalLahir.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            JOptionPane.showMessageDialog(this, "Format tanggal tidak valid! Gunakan format YYYY-MM-DD.", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        LocalDate dob;
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd")
+                    .withResolverStyle(ResolverStyle.STRICT);
+            dob = LocalDate.parse(tanggalLahir, formatter);
+        } catch (DateTimeParseException e) {
+            JOptionPane.showMessageDialog(this, "Tanggal lahir tidak valid! Periksa kembali tanggal, bulan, dan tahun.", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (dob.isAfter(LocalDate.now())) {
+            JOptionPane.showMessageDialog(this, "Tanggal lahir tidak boleh di masa depan!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (dob.getYear() < 1900) {
+            JOptionPane.showMessageDialog(this, "Tahun lahir tidak valid!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 5. Database update (only executed when all validations pass)
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
             PreparedStatement ps = conn.prepareStatement(
@@ -131,18 +185,23 @@ public class FormEditSiswa extends javax.swing.JFrame {
 
             int result = ps.executeUpdate();
             if (result > 0) {
-                JOptionPane.showMessageDialog(this, "Data siswa berhasil diperbarui.");
+                this.nisn = nisnBaru;
+                JOptionPane.showMessageDialog(this, "Data siswa berhasil diperbarui.", "Sukses", JOptionPane.INFORMATION_MESSAGE);
                 if (dataChangedListener != null) {
                     dataChangedListener.onDataChanged();
                 }
                 this.dispose(); // tutup form edit
             } else {
-                JOptionPane.showMessageDialog(this, "Data siswa gagal diperbarui.");
+                JOptionPane.showMessageDialog(this, "Data siswa gagal diperbarui.", "Error", JOptionPane.ERROR_MESSAGE);
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Kesalahan saat mengupdate data:\n" + e.getMessage());
+            if (e.getErrorCode() == 1062 || (e.getMessage() != null && e.getMessage().toLowerCase().contains("duplicate"))) {
+                JOptionPane.showMessageDialog(this, "NISN baru sudah terdaftar untuk siswa lain!", "Database Error", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Kesalahan saat mengupdate data:\n" + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
-}
+    }
 
     /**
      * This method is called from within the constructor to initialize the form.
