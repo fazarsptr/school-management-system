@@ -49,59 +49,105 @@ public class FormEditDataGuru extends javax.swing.JFrame {
     private void tampilkanDataGuru() {
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
-            PreparedStatement ps = conn.prepareStatement("SELECT * FROM tb_guru WHERE nik = ?");
-            ps.setString(1, nik);
-            ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) {
-                
-                txtNama.setText(rs.getString("nama"));
-                txtNik.setText(rs.getString("nik"));
-                
-                
-                comboBoxLP.addItem("Laki-laki");
-                comboBoxLP.addItem("Perempuan");
-                String genderSiswa = rs.getString("jenis_kelamin");
-                if ("Laki-laki".equalsIgnoreCase(genderSiswa)) {
-                    comboBoxLP.setSelectedItem("Laki-laki");
-                } else if ("Perempuan".equalsIgnoreCase(genderSiswa)) {
-                    comboBoxLP.setSelectedItem("Perempuan");
+            try (PreparedStatement ps = conn.prepareStatement("SELECT * FROM tb_guru WHERE nik = ?")) {
+                ps.setString(1, nik);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        txtNama.setText(rs.getString("nama"));
+                        txtNik.setText(rs.getString("nik"));
+                        
+                        comboBoxLP.addItem("Laki-laki");
+                        comboBoxLP.addItem("Perempuan");
+                        String genderGuru = rs.getString("jenis_kelamin");
+                        if ("Laki-laki".equalsIgnoreCase(genderGuru)) {
+                            comboBoxLP.setSelectedItem("Laki-laki");
+                        } else if ("Perempuan".equalsIgnoreCase(genderGuru)) {
+                            comboBoxLP.setSelectedItem("Perempuan");
+                        }
+                    }
                 }
-                     
             }
-
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Gagal mengambil data siswa\n" + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal mengambil data guru\n" + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
         }
     }
     
+    /**
+     * Checks if newNik already exists in tb_guru belonging to another teacher record.
+     */
+    private boolean isNikExistsForOther(Connection conn, String newNik, String currentNik) throws SQLException {
+        String sql = "SELECT 1 FROM tb_guru WHERE nik = ? AND nik != ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, newNik);
+            ps.setString(2, currentNik);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
     private void updateDataGuru() {
-        String nama = txtNama.getText();
-        String nikBaru = txtNik.getText(); // bisa berbeda dari nisn lama
-        String jenisKelamin = comboBoxLP.getSelectedItem().toString();
+        // Retrieve and trim values from form fields
+        String nama = txtNama.getText() != null ? txtNama.getText().trim() : "";
+        String nikBaru = txtNik.getText() != null ? txtNik.getText().trim() : ""; // Can be different from current NIK
+        String jenisKelamin = comboBoxLP.getSelectedItem() != null ? comboBoxLP.getSelectedItem().toString().trim() : "";
         
+        // 1. Prevent empty or whitespace-only inputs
+        if (nama.isEmpty() || nikBaru.isEmpty() || jenisKelamin.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Semua field harus diisi!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 2. Validate field lengths against database schema
+        if (nama.length() > 100) {
+            JOptionPane.showMessageDialog(this, "Nama guru tidak boleh melebihi 100 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (nikBaru.length() > 20) {
+            JOptionPane.showMessageDialog(this, "NIK/NUPTK tidak boleh melebihi 20 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 3. Validate gender selection
+        if (!"Laki-laki".equalsIgnoreCase(jenisKelamin) && !"Perempuan".equalsIgnoreCase(jenisKelamin)) {
+            JOptionPane.showMessageDialog(this, "Pilih jenis kelamin yang valid (Laki-laki atau Perempuan)!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
-            PreparedStatement ps = conn.prepareStatement(
-                "UPDATE tb_guru SET nik=?, nama=?, jenis_kelamin=? WHERE nik=?"
-            );
-            ps.setString(2, nama);
-            ps.setString(1, nikBaru);
-            ps.setString(3, jenisKelamin);
-            ps.setString(4, this.nik);
-            
-            int result = ps.executeUpdate();
-            if (result > 0) {
-                JOptionPane.showMessageDialog(this, "Data guru berhasil diperbarui.");
-                if (dataChangedListener != null) {
-                    dataChangedListener.onDataChanged();
+
+            // 4. Check for duplicate NIK/NUPTK, excluding current teacher's original record
+            if (!nikBaru.equals(this.nik) && isNikExistsForOther(conn, nikBaru, this.nik)) {
+                JOptionPane.showMessageDialog(this, "NIK/NUPTK baru sudah terdaftar untuk guru lain!", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            String sql = "UPDATE tb_guru SET nik=?, nama=?, jenis_kelamin=? WHERE nik=?";
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setString(1, nikBaru);
+                ps.setString(2, nama);
+                ps.setString(3, jenisKelamin);
+                ps.setString(4, this.nik); // old NIK as condition
+                
+                int result = ps.executeUpdate();
+                if (result > 0) {
+                    this.nik = nikBaru; // Update internal reference to the new NIK
+                    JOptionPane.showMessageDialog(this, "Data guru berhasil diperbarui.", "Sukses", JOptionPane.INFORMATION_MESSAGE);
+                    if (dataChangedListener != null) {
+                        dataChangedListener.onDataChanged();
+                    }
+                    this.dispose(); // Close edit form
+                } else {
+                    JOptionPane.showMessageDialog(this, "Data guru gagal diperbarui.", "Error", JOptionPane.ERROR_MESSAGE);
                 }
-                this.dispose(); // tutup form edit
-            } else {
-                JOptionPane.showMessageDialog(this, "Data guru gagal diperbarui.");
             }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Kesalahan saat mengupdate data:\n" + e.getMessage());
+            if (e.getErrorCode() == 1062 || (e.getMessage() != null && e.getMessage().toLowerCase().contains("duplicate"))) {
+                JOptionPane.showMessageDialog(this, "NIK/NUPTK baru sudah terdaftar untuk guru lain!", "Database Error", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Kesalahan saat mengupdate data:\n" + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
     /**
