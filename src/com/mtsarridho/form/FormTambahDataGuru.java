@@ -8,6 +8,7 @@ package com.mtsarridho.form;
 import com.mtsarridho.config.KoneksiDatabase;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import javax.swing.JFrame;
 import javax.swing.JOptionPane;
@@ -236,14 +237,44 @@ public class FormTambahDataGuru extends javax.swing.JFrame {
         this.setLocation(x - xx, y - xy);
     }//GEN-LAST:event_jpanelGradient1MouseDragged
 
+    /**
+     * Checks if the given NIK/NUPTK already exists in tb_guru.
+     */
+    private boolean isNikExists(Connection conn, String nik) throws SQLException {
+        String sql = "SELECT 1 FROM tb_guru WHERE nik = ?";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, nik);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
     private void rSMaterialButtonRectangle1MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_rSMaterialButtonRectangle1MouseClicked
-        String nama = txtNama.getText();
-        String nik = txtNik.getText();
-        String jenisKelamin = comboBoxLP.getSelectedItem().toString();
+        // Retrieve and trim values from form fields
+        String nama = txtNama.getText() != null ? txtNama.getText().trim() : "";
+        String nik = txtNik.getText() != null ? txtNik.getText().trim() : "";
+        String jenisKelamin = comboBoxLP.getSelectedItem() != null ? comboBoxLP.getSelectedItem().toString().trim() : "";
         
-        // Validate input fields
-        if (nama.isEmpty() || nik.isEmpty()) {
+        // 1. Prevent empty or whitespace-only inputs
+        if (nama.isEmpty() || nik.isEmpty() || jenisKelamin.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Semua field harus diisi!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 2. Validate field lengths against database schema
+        if (nama.length() > 100) {
+            JOptionPane.showMessageDialog(this, "Nama guru tidak boleh melebihi 100 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        if (nik.length() > 20) {
+            JOptionPane.showMessageDialog(this, "NIK/NUPTK tidak boleh melebihi 20 karakter!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // 3. Validate gender selection
+        if (!"Laki-laki".equalsIgnoreCase(jenisKelamin) && !"Perempuan".equalsIgnoreCase(jenisKelamin)) {
+            JOptionPane.showMessageDialog(this, "Pilih jenis kelamin yang valid (Laki-laki atau Perempuan)!", "Validasi Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -251,43 +282,41 @@ public class FormTambahDataGuru extends javax.swing.JFrame {
             // Connect to database
             Connection conn = KoneksiDatabase.getKoneksi();
 
-            // Create SQL statement for inserting data
-            String sql = "INSERT INTO tb_guru (nik, nama, jenis_kelamin) VALUES (?, ?, ?)";
-            PreparedStatement pstmt = conn.prepareStatement(sql);
-
-            // Set parameters
-            pstmt.setString(1, nik);
-            pstmt.setString(2, nama);
-            pstmt.setString(3, jenisKelamin);
-            
-
-            // Execute SQL
-            int result = pstmt.executeUpdate();
-
-            if (result > 0) {
-                JOptionPane.showMessageDialog(this, "Data guru berhasil disimpan!", "Sukses", JOptionPane.INFORMATION_MESSAGE);
-                
-                if (dataChangedListener != null) {
-                    dataChangedListener.onDataChanged();
-                }
-                // Clear form fields after successful save
-                clearFields();
-
-
-                // Close this form
-                //dispose();
-            } else {
-                JOptionPane.showMessageDialog(this, "Gagal menyimpan data siswa!", "Error", JOptionPane.ERROR_MESSAGE);
+            // 4. Check for duplicate NIK/NUPTK before inserting
+            if (isNikExists(conn, nik)) {
+                JOptionPane.showMessageDialog(this, "NIK/NUPTK sudah terdaftar!", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+                return;
             }
 
-            // Close resources
-            //pstmt.close();
-            //conn.close();
+            // Create SQL statement for inserting data
+            String sql = "INSERT INTO tb_guru (nik, nama, jenis_kelamin) VALUES (?, ?, ?)";
+            try (PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                // Set parameters
+                pstmt.setString(1, nik);
+                pstmt.setString(2, nama);
+                pstmt.setString(3, jenisKelamin);
 
+                // Execute SQL
+                int result = pstmt.executeUpdate();
+
+                if (result > 0) {
+                    JOptionPane.showMessageDialog(this, "Data guru berhasil disimpan!", "Sukses", JOptionPane.INFORMATION_MESSAGE);
+                    
+                    if (dataChangedListener != null) {
+                        dataChangedListener.onDataChanged();
+                    }
+                    // Clear form fields after successful save
+                    clearFields();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Gagal menyimpan data guru!", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Error database: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
-        } catch (IllegalArgumentException e) {
-            JOptionPane.showMessageDialog(this, "Format tanggal tidak valid! Gunakan format YYYY-MM-DD", "Format Error", JOptionPane.ERROR_MESSAGE);
+            if (e.getErrorCode() == 1062 || (e.getMessage() != null && e.getMessage().toLowerCase().contains("duplicate"))) {
+                JOptionPane.showMessageDialog(this, "NIK/NUPTK sudah terdaftar di database!", "Database Error", JOptionPane.ERROR_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Error database: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }//GEN-LAST:event_rSMaterialButtonRectangle1MouseClicked
 
