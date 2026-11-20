@@ -11,6 +11,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import com.mtsarridho.form.GuruItem;
 
 
@@ -42,25 +46,26 @@ public class TambahAbsen extends javax.swing.JFrame {
         jComboBox2.addItem("Hadir");
         jComboBox2.addItem("Tidak Hadir");
 
-        // data guru dari database
+        // Load teacher data from database into combo box
         try {
             Connection conn = KoneksiDatabase.getKoneksi(); 
-            //String sql = "SELECT nama FROM tb_guru";
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT nik, nama FROM tb_guru");
-            DefaultComboBoxModel<GuruItem> model = new DefaultComboBoxModel<>();
-            while (rs.next()) {
-                String nik = rs.getString("nik");
-                String nama = rs.getString("nama");
-                model.addElement(new GuruItem(nik, nama));
+            if (conn != null) {
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT nik, nama FROM tb_guru")) {
+                    DefaultComboBoxModel<GuruItem> model = new DefaultComboBoxModel<>();
+                    while (rs.next()) {
+                        String nik = rs.getString("nik");
+                        String nama = rs.getString("nama");
+                        if (nik != null && !nik.trim().isEmpty() && nama != null && !nama.trim().isEmpty()) {
+                            model.addElement(new GuruItem(nik.trim(), nama.trim()));
+                        }
+                    }
+                    ((JComboBox) jComboBox1).setModel(model);
+                }
             }
-            ((JComboBox) jComboBox1).setModel(model);
-
-            //rs.close();
-            //stmt.close();
-            //conn.close();
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Gagal memuat nama guru\n" + e.getMessage());
+            System.err.println("Error loading teachers in TambahAbsen: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal memuat nama guru.", "Database Error", JOptionPane.ERROR_MESSAGE);
         }
         
         setLocationRelativeTo(null); 
@@ -211,51 +216,98 @@ public class TambahAbsen extends javax.swing.JFrame {
     }//GEN-LAST:event_jLabel1MouseClicked
 
     private void rSMaterialButtonRectangle1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_rSMaterialButtonRectangle1ActionPerformed
-        GuruItem selectedGuru = (GuruItem) jComboBox1.getSelectedItem();
+        Object selectedItem = jComboBox1.getSelectedItem();
+        if (!(selectedItem instanceof GuruItem)) {
+            JOptionPane.showMessageDialog(this, "Silakan pilih guru terlebih dahulu.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
-        if (selectedGuru != null) {
-            String nikGuru = selectedGuru.getNik();         // dari combo box
-            String namaGuru = selectedGuru.getNama();       // dari combo box
-            String keterangan = jComboBox2.getSelectedItem().toString(); // hadir/tidak hadir
-            String tanggal = tTanggal.getText();            // dari text field
+        GuruItem selectedGuru = (GuruItem) selectedItem;
+        String nikGuru = selectedGuru.getNik() != null ? selectedGuru.getNik().trim() : "";
+        String namaGuru = selectedGuru.getNama() != null ? selectedGuru.getNama().trim() : "";
 
-            try {
-                Connection conn = KoneksiDatabase.getKoneksi();
+        if (nikGuru.isEmpty() || namaGuru.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Data guru yang dipilih tidak valid.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
-                // CEK APAKAH DATA SUDAH ADA
-                String cekSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE nik = ? AND waktu = ?";
-                PreparedStatement cekStmt = conn.prepareStatement(cekSql);
+        Object statusItem = jComboBox2.getSelectedItem();
+        String keterangan = statusItem != null ? statusItem.toString().trim() : "";
+        if (keterangan.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Silakan pilih status kehadiran.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String tanggal = tTanggal.getText() != null ? tTanggal.getText().trim() : "";
+        if (tanggal.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Tanggal kehadiran tidak boleh kosong.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        if (!tanggal.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            JOptionPane.showMessageDialog(this, "Format tanggal tidak valid. Gunakan format YYYY-MM-DD.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
+            LocalDate parsedDate = LocalDate.parse(tanggal, formatter);
+            int year = parsedDate.getYear();
+            if (year < 1900 || year > 2100) {
+                JOptionPane.showMessageDialog(this, "Tahun tanggal kehadiran harus antara 1900 dan 2100.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (DateTimeParseException e) {
+            JOptionPane.showMessageDialog(this, "Tanggal yang dimasukkan tidak valid kalender.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        try {
+            Connection conn = KoneksiDatabase.getKoneksi();
+            if (conn == null) {
+                JOptionPane.showMessageDialog(this, "Koneksi database tidak tersedia.", "Database Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            // Check if attendance record already exists for the teacher on this date
+            String cekSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE nik = ? AND waktu = ?";
+            try (PreparedStatement cekStmt = conn.prepareStatement(cekSql)) {
                 cekStmt.setString(1, nikGuru);
                 cekStmt.setString(2, tanggal);
-                ResultSet rs = cekStmt.executeQuery();
-                rs.next();
-                int count = rs.getInt(1);
+                try (ResultSet rs = cekStmt.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        JOptionPane.showMessageDialog(this, "Guru ini sudah memiliki catatan kehadiran pada tanggal tersebut.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                }
+            }
 
-                if (count > 0) {
-                    JOptionPane.showMessageDialog(this, "Guru ini sudah absen pada tanggal tersebut.");
-                    
-                } else {
-                    // INSERT DATA
-                    String sql = "INSERT INTO tb_kehadiran_guru (nik, nama, kehadiran, waktu) VALUES (?, ?, ?, ?)";
-                    PreparedStatement stmt = conn.prepareStatement(sql);
-                    stmt.setString(1, nikGuru);
-                    stmt.setString(2, namaGuru);
-                    stmt.setString(3, keterangan);
-                    stmt.setString(4, tanggal);
-                    stmt.executeUpdate();
-                    
-                    JOptionPane.showMessageDialog(this, "Data kehadiran berhasil disimpan!");
+            // Insert new attendance record
+            String sql = "INSERT INTO tb_kehadiran_guru (nik, nama, kehadiran, waktu) VALUES (?, ?, ?, ?)";
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, nikGuru);
+                stmt.setString(2, namaGuru);
+                stmt.setString(3, keterangan);
+                stmt.setString(4, tanggal);
+                int rowsInserted = stmt.executeUpdate();
+
+                if (rowsInserted > 0) {
+                    JOptionPane.showMessageDialog(this, "Data kehadiran berhasil disimpan!", "Sukses", JOptionPane.INFORMATION_MESSAGE);
                     if (parentForm != null) {
-                    parentForm.refreshTable(); // refresh tabel di form utama
+                        parentForm.refreshTable();
+                    }
+                    if (dataChangedListener != null) {
+                        dataChangedListener.onDataChanged();
                     }
                     dispose();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Data kehadiran gagal disimpan.", "Peringatan", JOptionPane.WARNING_MESSAGE);
                 }
-
-            } catch (SQLException e) {
-                JOptionPane.showMessageDialog(this, "Gagal menyimpan data: " + e.getMessage());
             }
-        } else {
-            JOptionPane.showMessageDialog(this, "Silakan pilih guru terlebih dahulu.");
+
+        } catch (SQLException e) {
+            System.err.println("Database error inserting attendance: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal menyimpan data kehadiran ke database.", "Database Error", JOptionPane.ERROR_MESSAGE);
         }
     }//GEN-LAST:event_rSMaterialButtonRectangle1ActionPerformed
 

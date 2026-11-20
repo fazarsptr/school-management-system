@@ -11,6 +11,10 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import com.mtsarridho.form.GuruItem;
 
 
@@ -64,66 +68,83 @@ public class EditAbsen extends javax.swing.JFrame {
         });
     }
     
+    public int getIdKehadiran() {
+        return idKehadiran;
+    }
+
+    public void setIdKehadiran(int idKehadiran) {
+        this.idKehadiran = idKehadiran;
+    }
+
     private void loadGuruData() {
         try {
             Connection conn = KoneksiDatabase.getKoneksi(); 
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT nik, nama FROM tb_guru");
-            DefaultComboBoxModel<GuruItem> model = new DefaultComboBoxModel<>();
-            while (rs.next()) {
-                String nik = rs.getString("nik");
-                String nama = rs.getString("nama");
-                model.addElement(new GuruItem(nik, nama));
+            if (conn != null) {
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT nik, nama FROM tb_guru")) {
+                    DefaultComboBoxModel<GuruItem> model = new DefaultComboBoxModel<>();
+                    while (rs.next()) {
+                        String nik = rs.getString("nik");
+                        String nama = rs.getString("nama");
+                        if (nik != null && !nik.trim().isEmpty() && nama != null && !nama.trim().isEmpty()) {
+                            model.addElement(new GuruItem(nik.trim(), nama.trim()));
+                        }
+                    }
+                    ((JComboBox) jComboBox1).setModel(model);
+                }
             }
-            ((JComboBox) jComboBox1).setModel(model);
-            rs.close();
-            stmt.close();
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Gagal memuat nama guru\n" + e.getMessage());
+            System.err.println("Error loading teachers in EditAbsen: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal memuat nama guru.", "Database Error", JOptionPane.ERROR_MESSAGE);
         }
     }
     
     public void setData(String namaGuru, String kehadiran, String tanggal) {
         try {
-            // Cari data kehadiran berdasarkan nama guru dan tanggal
+            // Find attendance record by teacher name and date
             Connection conn = KoneksiDatabase.getKoneksi();
+            if (conn == null) {
+                JOptionPane.showMessageDialog(this, "Koneksi database tidak tersedia.", "Database Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
             String sql = "SELECT id_kehadiran, nik, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
                          "WHERE nama = ? AND waktu = ?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, namaGuru);
-            stmt.setString(2, tanggal);
-            ResultSet rs = stmt.executeQuery();
-            
-            if (rs.next()) {
-                // Simpan ID kehadiran
-                this.idKehadiran = rs.getInt("id_kehadiran");
-                String nik = rs.getString("nik");
-                
-                // Set tanggal
-                tTanggal.setText(tanggal);
-                
-                // Set kehadiran di combo box
-                jComboBox2.setSelectedItem(kehadiran);
-                
-                // Set guru di combo box
-                for (int i = 0; i < jComboBox1.getItemCount(); i++) {
-                    Object obj = jComboBox1.getItemAt(i);
-                    if (obj instanceof GuruItem) {
-                        GuruItem item = (GuruItem) obj;
-                        if (item.getNama().equals(namaGuru) && item.getNik().equals(nik)) {
-                            jComboBox1.setSelectedIndex(i);
-                            break;
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, namaGuru);
+                stmt.setString(2, tanggal);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    if (rs.next()) {
+                        // Store attendance record ID
+                        this.idKehadiran = rs.getInt("id_kehadiran");
+                        String nik = rs.getString("nik");
+                        
+                        // Set date
+                        tTanggal.setText(tanggal != null ? tanggal.trim() : "");
+                        
+                        // Set attendance status in combo box
+                        if (kehadiran != null) {
+                            jComboBox2.setSelectedItem(kehadiran.trim());
                         }
+                        
+                        // Set selected teacher in combo box
+                        for (int i = 0; i < jComboBox1.getItemCount(); i++) {
+                            Object obj = jComboBox1.getItemAt(i);
+                            if (obj instanceof GuruItem) {
+                                GuruItem item = (GuruItem) obj;
+                                if (item.getNama().equals(namaGuru) && item.getNik().equals(nik)) {
+                                    jComboBox1.setSelectedIndex(i);
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        JOptionPane.showMessageDialog(this, "Data kehadiran tidak ditemukan!", "Peringatan", JOptionPane.WARNING_MESSAGE);
                     }
                 }
-            } else {
-                JOptionPane.showMessageDialog(this, "Data tidak ditemukan!");
             }
-            
-            rs.close();
-            stmt.close();
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Error saat mengambil data: " + e.getMessage());
+            System.err.println("Error fetching attendance data in EditAbsen: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Error saat mengambil data dari database.", "Database Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -257,51 +278,103 @@ public class EditAbsen extends javax.swing.JFrame {
     }//GEN-LAST:event_rSMaterialButtonRectangle1ActionPerformed
 
     private void rSMaterialButtonRectangle1MouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_rSMaterialButtonRectangle1MouseClicked
-        try {
-            // Pastikan id_kehadiran sudah di-set
-            if (this.idKehadiran <= 0) {
-                JOptionPane.showMessageDialog(this, "ID kehadiran tidak valid!");
-                return;
-            }
-            
-            // Ambil data dari form
-            GuruItem selectedGuru = (GuruItem) jComboBox1.getSelectedItem();
-            String keterangan = jComboBox2.getSelectedItem().toString();
-            String tanggal = tTanggal.getText();
-            
-            if (selectedGuru == null) {
-                JOptionPane.showMessageDialog(this, "Silakan pilih guru!");
-                return;
-            }
-            
-            if (tanggal.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Tanggal tidak boleh kosong!");
-                return;
-            }
-            
-            Connection conn = KoneksiDatabase.getKoneksi();
-            // Gunakan id_kehadiran sebagai kriteria update
-            String sql = "UPDATE tb_kehadiran_guru SET nik=?, nama=?, kehadiran=?, waktu=? WHERE id_kehadiran=?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, selectedGuru.getNik());
-            stmt.setString(2, selectedGuru.getNama());
-            stmt.setString(3, keterangan);
-            stmt.setString(4, tanggal);
-            stmt.setInt(5, this.idKehadiran);
+        // Ensure id_kehadiran is set and valid
+        if (this.idKehadiran <= 0) {
+            JOptionPane.showMessageDialog(this, "ID kehadiran tidak valid untuk pembaruan.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
 
-            int result = stmt.executeUpdate();
-            if (result > 0) {
-                JOptionPane.showMessageDialog(this, "Data berhasil diupdate!");
-                if (parentForm != null) {
-                    parentForm.refreshTable(); // refresh tabel di form utama
+        Object selectedItem = jComboBox1.getSelectedItem();
+        if (!(selectedItem instanceof GuruItem)) {
+            JOptionPane.showMessageDialog(this, "Silakan pilih guru terlebih dahulu.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        GuruItem selectedGuru = (GuruItem) selectedItem;
+        String nikGuru = selectedGuru.getNik() != null ? selectedGuru.getNik().trim() : "";
+        String namaGuru = selectedGuru.getNama() != null ? selectedGuru.getNama().trim() : "";
+
+        if (nikGuru.isEmpty() || namaGuru.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Data guru yang dipilih tidak valid.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        Object statusItem = jComboBox2.getSelectedItem();
+        String keterangan = statusItem != null ? statusItem.toString().trim() : "";
+        if (keterangan.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Silakan pilih status kehadiran.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String tanggal = tTanggal.getText() != null ? tTanggal.getText().trim() : "";
+        if (tanggal.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Tanggal kehadiran tidak boleh kosong.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        if (!tanggal.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            JOptionPane.showMessageDialog(this, "Format tanggal tidak valid. Gunakan format YYYY-MM-DD.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        try {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
+            LocalDate parsedDate = LocalDate.parse(tanggal, formatter);
+            int year = parsedDate.getYear();
+            if (year < 1900 || year > 2100) {
+                JOptionPane.showMessageDialog(this, "Tahun tanggal kehadiran harus antara 1900 dan 2100.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+        } catch (DateTimeParseException e) {
+            JOptionPane.showMessageDialog(this, "Tanggal yang dimasukkan tidak valid kalender.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        try {
+            Connection conn = KoneksiDatabase.getKoneksi();
+            if (conn == null) {
+                JOptionPane.showMessageDialog(this, "Koneksi database tidak tersedia.", "Database Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            // Check if another attendance record already exists for the teacher on this date (excluding current record)
+            String cekSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE nik = ? AND waktu = ? AND id_kehadiran != ?";
+            try (PreparedStatement cekStmt = conn.prepareStatement(cekSql)) {
+                cekStmt.setString(1, nikGuru);
+                cekStmt.setString(2, tanggal);
+                cekStmt.setInt(3, this.idKehadiran);
+                try (ResultSet rs = cekStmt.executeQuery()) {
+                    if (rs.next() && rs.getInt(1) > 0) {
+                        JOptionPane.showMessageDialog(this, "Guru ini sudah memiliki catatan kehadiran pada tanggal tersebut.", "Validasi Error", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
                 }
-                dispose();
-            } else {
-                JOptionPane.showMessageDialog(this, "Data gagal diupdate!");
+            }
+
+            // Update attendance record using id_kehadiran
+            String sql = "UPDATE tb_kehadiran_guru SET nik=?, nama=?, kehadiran=?, waktu=? WHERE id_kehadiran=?";
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, nikGuru);
+                stmt.setString(2, namaGuru);
+                stmt.setString(3, keterangan);
+                stmt.setString(4, tanggal);
+                stmt.setInt(5, this.idKehadiran);
+
+                int result = stmt.executeUpdate();
+                if (result > 0) {
+                    JOptionPane.showMessageDialog(this, "Data berhasil diupdate!", "Sukses", JOptionPane.INFORMATION_MESSAGE);
+                    if (parentForm != null) {
+                        parentForm.refreshTable(); // Refresh table in parent form
+                    }
+                    dispose();
+                } else {
+                    JOptionPane.showMessageDialog(this, "Data gagal diupdate!", "Peringatan", JOptionPane.WARNING_MESSAGE);
+                }
             }
 
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Terjadi kesalahan: " + e.getMessage());
+            System.err.println("Database error updating attendance: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal memperbarui data kehadiran di database.", "Database Error", JOptionPane.ERROR_MESSAGE);
         }
     }//GEN-LAST:event_rSMaterialButtonRectangle1MouseClicked
 
