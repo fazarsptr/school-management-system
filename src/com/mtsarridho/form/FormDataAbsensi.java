@@ -1,16 +1,33 @@
 
 package com.mtsarridho.form;
 
-import java.sql.*;
-import javax.swing.table.DefaultTableModel;
-import javax.swing.JOptionPane;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import javax.swing.JOptionPane;
+import javax.swing.table.DefaultTableModel;
 import com.mtsarridho.config.KoneksiDatabase;
+import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import javax.swing.BorderFactory;
+import javax.swing.DefaultComboBoxModel;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.RowSorter;
 import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
@@ -20,20 +37,338 @@ import javax.swing.table.TableRowSorter;
 
 public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedListener {
     
-private java.util.List<Integer> listIdKehadiran = new java.util.ArrayList<>();
-private TableRowSorter<DefaultTableModel> sorter;
-private boolean ascending = true;   
+    private java.util.List<Integer> listIdKehadiran = new java.util.ArrayList<>();
+    private TableRowSorter<DefaultTableModel> sorter;
+    private boolean ascending = true;
+
+    // Monthly summary statistics
+    private int totalHadir = 0;
+    private int totalTidakHadir = 0;
+    private double persentaseKehadiran = 0.0;
+    private boolean isTableFiltered = false;
+
+    // Summary UI components
+    private javax.swing.JPanel panelSummary;
+    private javax.swing.JComboBox<String> cbBulan;
+    private javax.swing.JComboBox<String> cbTahun;
+    private javax.swing.JButton btnFilter;
+    private javax.swing.JButton btnSemua;
+    private javax.swing.JLabel lblTotalHadir;
+    private javax.swing.JLabel lblTotalTidakHadir;
+    private javax.swing.JLabel lblPersentase;
+
+    private static final String[] NAMA_BULAN = {
+        "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+    };
 
     @Override
     public void onDataChanged() {
         tampilkanDataAbsensiGuru();
-        
+        setupTableSorter();
+        updateMonthlySummary();
     }
 
     public FormDataAbsensi() {
         initComponents();
+        initSummaryComponents();
         tampilkanDataAbsensiGuru();
         setupTableSorter();
+        updateMonthlySummary();
+    }
+
+    /**
+     * Initialize the monthly attendance summary UI components,
+     * including Month/Year filters and statistics cards.
+     */
+    private void initSummaryComponents() {
+        panelSummary = new JPanel(new BorderLayout(15, 0));
+        panelSummary.setBackground(Color.WHITE);
+        panelSummary.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(218, 224, 233)),
+            BorderFactory.createEmptyBorder(8, 12, 8, 12)
+        ));
+
+        // Left Panel: Filter Controls
+        JPanel pnlFilter = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        pnlFilter.setOpaque(false);
+
+        JLabel lblFilterTitle = new JLabel("Rekap Bulanan:");
+        lblFilterTitle.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        lblFilterTitle.setForeground(new Color(50, 50, 50));
+
+        JLabel lblBulanTitle = new JLabel("Bulan:");
+        lblBulanTitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
+        cbBulan = new JComboBox<String>(NAMA_BULAN) {
+            @Override
+            public void setSelectedItem(Object anObject) {
+                if (anObject instanceof Integer) {
+                    int m = (Integer) anObject;
+                    if (m >= 1 && m <= 12) {
+                        setSelectedIndex(m - 1);
+                        return;
+                    }
+                } else if (anObject instanceof String) {
+                    String str = ((String) anObject).trim();
+                    try {
+                        int m = Integer.parseInt(str);
+                        if (m >= 1 && m <= 12) {
+                            setSelectedIndex(m - 1);
+                            return;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                    for (int i = 0; i < NAMA_BULAN.length; i++) {
+                        if (NAMA_BULAN[i].equalsIgnoreCase(str)) {
+                            setSelectedIndex(i);
+                            return;
+                        }
+                    }
+                }
+                super.setSelectedItem(anObject);
+            }
+        };
+        cbBulan.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        cbBulan.setPreferredSize(new Dimension(115, 30));
+
+        JLabel lblTahunTitle = new JLabel("Tahun:");
+        lblTahunTitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
+        cbTahun = new JComboBox<String>() {
+            @Override
+            public void setSelectedItem(Object anObject) {
+                if (anObject != null) {
+                    String val = anObject.toString().trim();
+                    DefaultComboBoxModel<String> model = (DefaultComboBoxModel<String>) getModel();
+                    boolean found = false;
+                    for (int i = 0; i < model.getSize(); i++) {
+                        if (model.getElementAt(i).equals(val)) {
+                            setSelectedIndex(i);
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        model.insertElementAt(val, 0);
+                        setSelectedIndex(0);
+                        return;
+                    }
+                }
+                super.setSelectedItem(anObject);
+            }
+        };
+        cbTahun.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        cbTahun.setPreferredSize(new Dimension(80, 30));
+
+        populateYears();
+
+        int currentMonth = LocalDate.now().getMonthValue();
+        cbBulan.setSelectedIndex(currentMonth - 1);
+
+        btnFilter = new JButton("FILTER");
+        btnFilter.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnFilter.setBackground(new Color(13, 146, 244));
+        btnFilter.setForeground(Color.WHITE);
+        btnFilter.setFocusPainted(false);
+        btnFilter.setPreferredSize(new Dimension(75, 30));
+
+        btnSemua = new JButton("SEMUA");
+        btnSemua.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnSemua.setBackground(new Color(108, 117, 125));
+        btnSemua.setForeground(Color.WHITE);
+        btnSemua.setFocusPainted(false);
+        btnSemua.setPreferredSize(new Dimension(75, 30));
+
+        pnlFilter.add(lblFilterTitle);
+        pnlFilter.add(lblBulanTitle);
+        pnlFilter.add(cbBulan);
+        pnlFilter.add(lblTahunTitle);
+        pnlFilter.add(cbTahun);
+        pnlFilter.add(btnFilter);
+        pnlFilter.add(btnSemua);
+
+        // Right Panel: Summary Cards
+        JPanel pnlCards = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 2));
+        pnlCards.setOpaque(false);
+
+        // Card 1: Total Hadir
+        JPanel cardHadir = createSummaryCard("TOTAL HADIR", new Color(46, 125, 50), new Color(232, 245, 233), new Color(200, 230, 201));
+        lblTotalHadir = new JLabel("0", SwingConstants.CENTER);
+        lblTotalHadir.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        lblTotalHadir.setForeground(new Color(27, 94, 32));
+        cardHadir.add(lblTotalHadir, BorderLayout.CENTER);
+
+        // Card 2: Total Tidak Hadir
+        JPanel cardTidakHadir = createSummaryCard("TOTAL TIDAK HADIR", new Color(198, 40, 40), new Color(255, 235, 238), new Color(255, 205, 210));
+        lblTotalTidakHadir = new JLabel("0", SwingConstants.CENTER);
+        lblTotalTidakHadir.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        lblTotalTidakHadir.setForeground(new Color(183, 28, 28));
+        cardTidakHadir.add(lblTotalTidakHadir, BorderLayout.CENTER);
+
+        // Card 3: Persentase Kehadiran
+        JPanel cardPersentase = createSummaryCard("PERSENTASE", new Color(21, 101, 192), new Color(227, 242, 253), new Color(187, 222, 251));
+        lblPersentase = new JLabel("0.0%", SwingConstants.CENTER);
+        lblPersentase.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        lblPersentase.setForeground(new Color(13, 71, 161));
+        cardPersentase.add(lblPersentase, BorderLayout.CENTER);
+
+        pnlCards.add(cardHadir);
+        pnlCards.add(cardTidakHadir);
+        pnlCards.add(cardPersentase);
+
+        panelSummary.add(pnlFilter, BorderLayout.WEST);
+        panelSummary.add(pnlCards, BorderLayout.EAST);
+
+        // Add panelSummary to the NORTH region of FormDataAbsensi
+        add(panelSummary, BorderLayout.NORTH);
+
+        // Register action listeners for interactive filtering
+        cbBulan.addActionListener(e -> {
+            updateMonthlySummary();
+            if (isTableFiltered) {
+                tampilkanDataAbsensiGuru();
+                setupTableSorter();
+            }
+        });
+
+        cbTahun.addActionListener(e -> {
+            updateMonthlySummary();
+            if (isTableFiltered) {
+                tampilkanDataAbsensiGuru();
+                setupTableSorter();
+            }
+        });
+
+        btnFilter.addActionListener(e -> {
+            isTableFiltered = true;
+            updateMonthlySummary();
+            tampilkanDataAbsensiGuru();
+            setupTableSorter();
+        });
+
+        btnSemua.addActionListener(e -> {
+            isTableFiltered = false;
+            tampilkanSemuaDataAbsensiGuru();
+            setupTableSorter();
+        });
+    }
+
+    private JPanel createSummaryCard(String title, Color headerColor, Color bgColor, Color borderColor) {
+        JPanel card = new JPanel(new BorderLayout(0, 2));
+        card.setBackground(bgColor);
+        card.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(borderColor, 1, true),
+            BorderFactory.createEmptyBorder(4, 12, 4, 12)
+        ));
+        card.setPreferredSize(new Dimension(140, 48));
+
+        JLabel lblTitle = new JLabel(title, SwingConstants.CENTER);
+        lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 10));
+        lblTitle.setForeground(headerColor);
+        card.add(lblTitle, BorderLayout.NORTH);
+
+        return card;
+    }
+
+    /**
+     * Populate cbTahun with distinct years from database and surrounding years.
+     */
+    private void populateYears() {
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>();
+        int currentYear = LocalDate.now().getYear();
+        Set<Integer> years = new TreeSet<>(Collections.reverseOrder());
+
+        // Default year range around current year
+        for (int y = currentYear + 2; y >= currentYear - 5; y--) {
+            years.add(y);
+        }
+
+        // Include any distinct years from actual attendance database records
+        try {
+            Connection conn = KoneksiDatabase.getKoneksi();
+            if (conn != null) {
+                String sql = "SELECT DISTINCT YEAR(waktu) AS tahun FROM tb_kehadiran_guru WHERE waktu IS NOT NULL ORDER BY tahun DESC";
+                try (PreparedStatement ps = conn.prepareStatement(sql);
+                     ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        int yr = rs.getInt("tahun");
+                        if (yr > 1900 && yr < 2200) {
+                            years.add(yr);
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error fetching distinct attendance years: " + e.getMessage());
+        }
+
+        for (Integer yr : years) {
+            model.addElement(String.valueOf(yr));
+        }
+        cbTahun.setModel(model);
+        cbTahun.setSelectedItem(String.valueOf(currentYear));
+    }
+
+    /**
+     * Recalculates monthly summary statistics using currently selected month & year.
+     */
+    public void updateMonthlySummary() {
+        updateMonthlySummary(getSelectedBulan(), getSelectedTahun());
+    }
+
+    /**
+     * Aggregates attendance records from database for specified month and year using PreparedStatement.
+     * Computes Total Hadir, Total Tidak Hadir, and Attendance Percentage.
+     */
+    public void updateMonthlySummary(int bulan, int tahun) {
+        int hadir = 0;
+        int tidakHadir = 0;
+
+        try {
+            Connection conn = KoneksiDatabase.getKoneksi();
+            if (conn != null) {
+                String sql = "SELECT kehadiran, COUNT(*) AS jumlah " +
+                             "FROM tb_kehadiran_guru " +
+                             "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
+                             "GROUP BY kehadiran";
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    ps.setInt(1, tahun);
+                    ps.setInt(2, bulan);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            String status = rs.getString("kehadiran");
+                            int count = rs.getInt("jumlah");
+                            if (status != null) {
+                                String trimmed = status.trim();
+                                if ("Hadir".equalsIgnoreCase(trimmed)) {
+                                    hadir += count;
+                                } else if ("Tidak Hadir".equalsIgnoreCase(trimmed)) {
+                                    tidakHadir += count;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error calculating monthly attendance summary: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal memuat rekap kehadiran bulanan dari database.", "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+
+        this.totalHadir = hadir;
+        this.totalTidakHadir = tidakHadir;
+        int totalEvaluated = hadir + tidakHadir;
+        this.persentaseKehadiran = totalEvaluated > 0 ? ((double) hadir / totalEvaluated) * 100.0 : 0.0;
+
+        if (lblTotalHadir != null) {
+            lblTotalHadir.setText(String.valueOf(this.totalHadir));
+        }
+        if (lblTotalTidakHadir != null) {
+            lblTotalTidakHadir.setText(String.valueOf(this.totalTidakHadir));
+        }
+        if (lblPersentase != null) {
+            lblPersentase.setText(String.format(java.util.Locale.US, "%.1f%%", this.persentaseKehadiran));
+        }
     }
     
     private void setupTableSorter() {
@@ -68,11 +403,36 @@ private boolean ascending = true;
     
     public void refreshTable() {
         tampilkanDataAbsensiGuru();
-        setupTableSorter(); // Perlu setup ulang karena model tabel berubah
+        setupTableSorter();
+        updateMonthlySummary();
     }
     
     public void tampilkanDataAbsensiGuru() {
-        DefaultTableModel model = new DefaultTableModel();
+        if (isTableFiltered) {
+            tampilkanDataAbsensiGuru(getSelectedBulan(), getSelectedTahun());
+        } else {
+            tampilkanSemuaDataAbsensiGuru();
+        }
+    }
+
+    public void tampilkanSemuaDataAbsensiGuru() {
+        isTableFiltered = false;
+        loadTableData("SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru ORDER BY waktu DESC, id_kehadiran DESC", null);
+    }
+
+    public void tampilkanDataAbsensiGuru(int bulan, int tahun) {
+        isTableFiltered = true;
+        String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? ORDER BY waktu DESC, id_kehadiran DESC";
+        loadTableData(sql, new int[]{tahun, bulan});
+    }
+
+    private void loadTableData(String sql, int[] params) {
+        DefaultTableModel model = new DefaultTableModel() {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
         
         model.addColumn("NO");
         model.addColumn("NAMA GURU");
@@ -83,50 +443,147 @@ private boolean ascending = true;
         
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
-            Statement stmt = conn.createStatement();
-            ResultSet rs = stmt.executeQuery("SELECT * FROM tb_kehadiran_guru");
-
-            int no = 1;
-            while (rs.next()) {
-                listIdKehadiran.add(rs.getInt("id_kehadiran"));
-                model.addRow(new Object[]{
-                    no++,
-                    rs.getString("nama"),
-                    rs.getString("kehadiran"),
-                    rs.getDate("waktu")
-                });
+            if (conn != null) {
+                try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                    if (params != null) {
+                        for (int i = 0; i < params.length; i++) {
+                            ps.setInt(i + 1, params[i]);
+                        }
+                    }
+                    try (ResultSet rs = ps.executeQuery()) {
+                        int no = 1;
+                        while (rs.next()) {
+                            listIdKehadiran.add(rs.getInt("id_kehadiran"));
+                            model.addRow(new Object[]{
+                                no++,
+                                rs.getString("nama"),
+                                rs.getString("kehadiran"),
+                                rs.getDate("waktu")
+                            });
+                        }
+                    }
+                }
             }
             
             tableDataAbsen.setModel(model);
+            applyTableFormatting();
             
-            // Custom renderer untuk header agar background biru muda dan teks rata tengah
-            DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
-            centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-            centerRenderer.setBackground(new Color(173, 216, 230)); // Light Blue (RGB)
-            centerRenderer.setForeground(Color.BLACK); // Warna teks
-            centerRenderer.setOpaque(true);
-            
-            for (int i = 0; i < tableDataAbsen.getColumnModel().getColumnCount(); i++) {
-                tableDataAbsen.getColumnModel().getColumn(i).setHeaderRenderer(centerRenderer);
-            }
-            
-            TableColumnModel columnModel = tableDataAbsen.getColumnModel();
-            // Atur lebar kolom
-            columnModel.getColumn(0).setMinWidth(40);
-            columnModel.getColumn(0).setMaxWidth(40);
-            columnModel.getColumn(0).setPreferredWidth(40); // Kolom NO kecil
-            
-            // Menetapkan renderer ke setiap kolom
-            DefaultTableCellRenderer colRenderer = new DefaultTableCellRenderer();
-            colRenderer.setHorizontalAlignment(SwingConstants.CENTER);
-
-            // Atur semua kolom agar isi cell-nya di tengah
-            for (int i = 0; i < tableDataAbsen.getColumnCount(); i++) {
-                tableDataAbsen.getColumnModel().getColumn(i).setCellRenderer(colRenderer);
-            }
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Gagal menampilkan data guru\n" + e.getMessage());
+            System.err.println("Error displaying attendance data: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal menampilkan data kehadiran guru: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void applyTableFormatting() {
+        // Custom renderer untuk header agar background biru muda dan teks rata tengah
+        DefaultTableCellRenderer centerRenderer = new DefaultTableCellRenderer();
+        centerRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+        centerRenderer.setBackground(new Color(173, 216, 230)); // Light Blue (RGB)
+        centerRenderer.setForeground(Color.BLACK); // Warna teks
+        centerRenderer.setOpaque(true);
+        
+        for (int i = 0; i < tableDataAbsen.getColumnModel().getColumnCount(); i++) {
+            tableDataAbsen.getColumnModel().getColumn(i).setHeaderRenderer(centerRenderer);
+        }
+        
+        TableColumnModel columnModel = tableDataAbsen.getColumnModel();
+        // Atur lebar kolom
+        columnModel.getColumn(0).setMinWidth(40);
+        columnModel.getColumn(0).setMaxWidth(40);
+        columnModel.getColumn(0).setPreferredWidth(40); // Kolom NO kecil
+        
+        // Menetapkan renderer ke setiap kolom
+        DefaultTableCellRenderer colRenderer = new DefaultTableCellRenderer();
+        colRenderer.setHorizontalAlignment(SwingConstants.CENTER);
+
+        // Atur semua kolom agar isi cell-nya di tengah
+        for (int i = 0; i < tableDataAbsen.getColumnCount(); i++) {
+            tableDataAbsen.getColumnModel().getColumn(i).setCellRenderer(colRenderer);
+        }
+    }
+
+    // Public getters and utility methods for statistical values and UI components
+    public int getTotalHadir() {
+        return totalHadir;
+    }
+
+    public int getTotalTidakHadir() {
+        return totalTidakHadir;
+    }
+
+    public double getPersentaseKehadiran() {
+        return persentaseKehadiran;
+    }
+
+    public int getSelectedBulan() {
+        if (cbBulan != null) {
+            return cbBulan.getSelectedIndex() + 1;
+        }
+        return LocalDate.now().getMonthValue();
+    }
+
+    public int getSelectedTahun() {
+        if (cbTahun != null) {
+            try {
+                Object item = cbTahun.getSelectedItem();
+                if (item != null) {
+                    return Integer.parseInt(item.toString().trim());
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+        return LocalDate.now().getYear();
+    }
+
+    public JComboBox<String> getCbBulan() {
+        return cbBulan;
+    }
+
+    public JComboBox<String> getCbTahun() {
+        return cbTahun;
+    }
+
+    public JLabel getLblTotalHadir() {
+        return lblTotalHadir;
+    }
+
+    public JLabel getLblTotalTidakHadir() {
+        return lblTotalTidakHadir;
+    }
+
+    public JLabel getLblPersentase() {
+        return lblPersentase;
+    }
+
+    public JButton getBtnFilter() {
+        return btnFilter;
+    }
+
+    public JButton getBtnSemua() {
+        return btnSemua;
+    }
+
+    public JPanel getPanelSummary() {
+        return panelSummary;
+    }
+
+    public com.mtsarridho.pallate.JTableCustom getTableDataAbsen() {
+        return tableDataAbsen;
+    }
+
+    public void setFilterBulanTahun(int bulan, int tahun) {
+        if (cbBulan != null && bulan >= 1 && bulan <= 12) {
+            cbBulan.setSelectedIndex(bulan - 1);
+        }
+        if (cbTahun != null) {
+            cbTahun.setSelectedItem(String.valueOf(tahun));
+        }
+        updateMonthlySummary();
+    }
+
+    public void filterBulanan(int bulan, int tahun) {
+        setFilterBulanTahun(bulan, tahun);
+        tampilkanDataAbsensiGuru(bulan, tahun);
+        setupTableSorter();
     }
     
     @SuppressWarnings("unchecked")
@@ -284,20 +741,22 @@ private boolean ascending = true;
 
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
-            String sql = "DELETE FROM tb_kehadiran_guru WHERE id_kehadiran = ?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setInt(1, idKehadiran);
-
-            int result = stmt.executeUpdate();
-            if (result > 0) {
-                JOptionPane.showMessageDialog(this, "Data berhasil dihapus.");
-                refreshTable();
-            } else {
-                JOptionPane.showMessageDialog(this, "Data gagal dihapus.");
+            if (conn != null) {
+                String sql = "DELETE FROM tb_kehadiran_guru WHERE id_kehadiran = ?";
+                try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                    stmt.setInt(1, idKehadiran);
+                    int result = stmt.executeUpdate();
+                    if (result > 0) {
+                        JOptionPane.showMessageDialog(this, "Data berhasil dihapus.", "Sukses", JOptionPane.INFORMATION_MESSAGE);
+                        refreshTable();
+                    } else {
+                        JOptionPane.showMessageDialog(this, "Data gagal dihapus.", "Peringatan", JOptionPane.WARNING_MESSAGE);
+                    }
+                }
             }
-
         } catch (SQLException e) {
-            JOptionPane.showMessageDialog(this, "Terjadi kesalahan saat menghapus data:\n" + e.getMessage());
+            System.err.println("Error deleting attendance record: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Terjadi kesalahan saat menghapus data:\n" + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
         }
     }//GEN-LAST:event_hapusMouseClicked
 
