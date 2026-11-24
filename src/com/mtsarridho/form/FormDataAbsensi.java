@@ -6,6 +6,14 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
+import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
 import com.mtsarridho.config.KoneksiDatabase;
@@ -53,6 +61,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     private javax.swing.JComboBox<String> cbTahun;
     private javax.swing.JButton btnFilter;
     private javax.swing.JButton btnSemua;
+    private javax.swing.JButton btnExportCsv;
     private javax.swing.JLabel lblTotalHadir;
     private javax.swing.JLabel lblTotalTidakHadir;
     private javax.swing.JLabel lblPersentase;
@@ -179,6 +188,14 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         btnSemua.setFocusPainted(false);
         btnSemua.setPreferredSize(new Dimension(75, 30));
 
+        btnExportCsv = new JButton("EXPORT CSV");
+        btnExportCsv.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnExportCsv.setBackground(new Color(40, 167, 69));
+        btnExportCsv.setForeground(Color.WHITE);
+        btnExportCsv.setFocusPainted(false);
+        btnExportCsv.setPreferredSize(new Dimension(105, 30));
+        btnExportCsv.setToolTipText("Ekspor data kehadiran guru periode ini ke file CSV");
+
         pnlFilter.add(lblFilterTitle);
         pnlFilter.add(lblBulanTitle);
         pnlFilter.add(cbBulan);
@@ -186,6 +203,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         pnlFilter.add(cbTahun);
         pnlFilter.add(btnFilter);
         pnlFilter.add(btnSemua);
+        pnlFilter.add(btnExportCsv);
 
         // Right Panel: Summary Cards
         JPanel pnlCards = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 2));
@@ -251,6 +269,8 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
             tampilkanSemuaDataAbsensiGuru();
             setupTableSorter();
         });
+
+        btnExportCsv.addActionListener(e -> exportAttendanceCsv());
     }
 
     private JPanel createSummaryCard(String title, Color headerColor, Color bgColor, Color borderColor) {
@@ -258,9 +278,9 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         card.setBackground(bgColor);
         card.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(borderColor, 1, true),
-            BorderFactory.createEmptyBorder(4, 12, 4, 12)
+            BorderFactory.createEmptyBorder(4, 10, 4, 10)
         ));
-        card.setPreferredSize(new Dimension(140, 48));
+        card.setPreferredSize(new Dimension(130, 48));
 
         JLabel lblTitle = new JLabel(title, SwingConstants.CENTER);
         lblTitle.setFont(new Font("Segoe UI", Font.BOLD, 10));
@@ -584,6 +604,181 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         setFilterBulanTahun(bulan, tahun);
         tampilkanDataAbsensiGuru(bulan, tahun);
         setupTableSorter();
+    }
+
+    public JButton getBtnExportCsv() {
+        return btnExportCsv;
+    }
+
+    /**
+     * Interactive handler for the Export CSV button.
+     * Checks if attendance data exists for the selected period, prompts user with JFileChooser,
+     * confirms file overwrite if needed, and writes attendance records.
+     */
+    public void exportAttendanceCsv() {
+        int bulan = getSelectedBulan();
+        int tahun = getSelectedTahun();
+
+        // Check if there are any records for the selected month & year first
+        try {
+            Connection conn = KoneksiDatabase.getKoneksi();
+            if (conn != null) {
+                String checkSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?";
+                try (PreparedStatement ps = conn.prepareStatement(checkSql)) {
+                    ps.setInt(1, tahun);
+                    ps.setInt(2, bulan);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (rs.next() && rs.getInt(1) == 0) {
+                            String namaBulan = (bulan >= 1 && bulan <= 12) ? NAMA_BULAN[bulan - 1] : String.valueOf(bulan);
+                            JOptionPane.showMessageDialog(
+                                this,
+                                "Tidak ada data kehadiran untuk periode " + namaBulan + " " + tahun + ".",
+                                "Informasi Ekspor",
+                                JOptionPane.INFORMATION_MESSAGE
+                            );
+                            return;
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Error checking attendance records before export: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal memeriksa data kehadiran dari database.", "Database Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Configure file chooser with default filename
+        String defaultFileName = String.format("teacher_attendance_%04d_%02d.csv", tahun, bulan);
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("Simpan File CSV Kehadiran Guru");
+        fileChooser.setSelectedFile(new File(defaultFileName));
+        fileChooser.setFileFilter(new FileNameExtensionFilter("CSV Files (*.csv)", "csv"));
+
+        int userSelection = fileChooser.showSaveDialog(this);
+        if (userSelection != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        File selectedFile = fileChooser.getSelectedFile();
+        if (selectedFile == null) {
+            return;
+        }
+
+        // Ensure .csv extension
+        if (!selectedFile.getName().toLowerCase().endsWith(".csv")) {
+            selectedFile = new File(selectedFile.getParentFile(), selectedFile.getName() + ".csv");
+        }
+
+        // Confirm overwrite if file already exists
+        if (selectedFile.exists()) {
+            int confirm = JOptionPane.showConfirmDialog(
+                this,
+                "File \"" + selectedFile.getName() + "\" sudah ada. Apakah Anda ingin menimpanya?",
+                "Konfirmasi Timpa File",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.WARNING_MESSAGE
+            );
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
+        }
+
+        // Perform CSV file export
+        try {
+            int count = exportAttendanceToCsv(selectedFile, bulan, tahun);
+            JOptionPane.showMessageDialog(
+                this,
+                "Data kehadiran guru (" + count + " data) berhasil diekspor ke:\n" + selectedFile.getAbsolutePath(),
+                "Ekspor Berhasil",
+                JOptionPane.INFORMATION_MESSAGE
+            );
+        } catch (IOException e) {
+            System.err.println("File write error exporting CSV: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal menulis file CSV:\n" + e.getMessage(), "Error Ekspor", JOptionPane.ERROR_MESSAGE);
+        } catch (SQLException e) {
+            System.err.println("Database error exporting CSV: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, "Gagal mengambil data kehadiran dari database.", "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Programmatically exports teacher attendance records for the specified month and year
+     * to the given destination CSV file.
+     * Compatible with Microsoft Excel (UTF-8 BOM, standard CRLF, RFC 4180 quoting).
+     *
+     * @param targetFile destination CSV file
+     * @param bulan month (1-12)
+     * @param tahun year (e.g. 2026)
+     * @return number of records exported
+     * @throws IOException on file write error
+     * @throws SQLException on database query error
+     */
+    public int exportAttendanceToCsv(File targetFile, int bulan, int tahun) throws IOException, SQLException {
+        Connection conn = KoneksiDatabase.getKoneksi();
+        if (conn == null) {
+            throw new SQLException("Database connection is not available.");
+        }
+
+        String sql = "SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru " +
+                     "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
+                     "ORDER BY waktu ASC, nama ASC";
+
+        int count = 0;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, tahun);
+            ps.setInt(2, bulan);
+
+            try (ResultSet rs = ps.executeQuery();
+                 FileOutputStream fos = new FileOutputStream(targetFile);
+                 OutputStreamWriter osw = new OutputStreamWriter(fos, StandardCharsets.UTF_8);
+                 BufferedWriter writer = new BufferedWriter(osw)) {
+
+                // Write UTF-8 Byte Order Mark (BOM) for seamless Microsoft Excel compatibility
+                writer.write("\uFEFF");
+
+                // Clear and descriptive CSV column headers
+                writer.write("No,Tanggal,Nama Guru,Status Kehadiran\r\n");
+
+                while (rs.next()) {
+                    count++;
+                    java.sql.Date d = rs.getDate("waktu");
+                    String tanggal = (d != null) ? d.toString() : (rs.getString("waktu") != null ? rs.getString("waktu").trim() : "");
+                    String nama = rs.getString("nama") != null ? rs.getString("nama").trim() : "";
+                    String kehadiran = rs.getString("kehadiran") != null ? rs.getString("kehadiran").trim() : "";
+
+                    writer.write(String.valueOf(count));
+                    writer.write(",");
+                    writer.write(escapeCsvField(tanggal));
+                    writer.write(",");
+                    writer.write(escapeCsvField(nama));
+                    writer.write(",");
+                    writer.write(escapeCsvField(kehadiran));
+                    writer.write("\r\n");
+                }
+                writer.flush();
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Escapes CSV values following RFC 4180 standards.
+     * Values containing commas, double quotes, or newlines are enclosed in double quotes,
+     * with internal double quotes escaped by doubling them ("").
+     *
+     * @param field input text
+     * @return RFC 4180 escaped string
+     */
+    public static String escapeCsvField(String field) {
+        if (field == null) {
+            return "";
+        }
+        boolean needQuotes = field.contains(",") || field.contains("\"") ||
+                             field.contains("\n") || field.contains("\r");
+        if (needQuotes) {
+            return "\"" + field.replace("\"", "\"\"") + "\"";
+        }
+        return field;
     }
     
     @SuppressWarnings("unchecked")
