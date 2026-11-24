@@ -89,6 +89,9 @@ lib/*.jar
 # ==============================================================================
 *.log
 *.tmp
+*.csv
+exports/
+*.export.csv
 .DS_Store
 Thumbs.db
 ehthumbs.db
