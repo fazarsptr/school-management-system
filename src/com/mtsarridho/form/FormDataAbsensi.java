@@ -31,11 +31,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JTextField;
 import javax.swing.RowSorter;
 import javax.swing.SortOrder;
 import javax.swing.SwingConstants;
@@ -65,6 +67,11 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     private javax.swing.JLabel lblTotalHadir;
     private javax.swing.JLabel lblTotalTidakHadir;
     private javax.swing.JLabel lblPersentase;
+
+    // Teacher search UI components
+    private javax.swing.JTextField txtCari;
+    private javax.swing.JButton btnCari;
+    private javax.swing.JButton btnResetCari;
 
     private static final String[] NAMA_BULAN = {
         "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -98,8 +105,13 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
             BorderFactory.createEmptyBorder(8, 12, 8, 12)
         ));
 
-        // Left Panel: Filter Controls
-        JPanel pnlFilter = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
+        // Container for Filter and Search rows on the left
+        JPanel pnlControls = new JPanel();
+        pnlControls.setLayout(new BoxLayout(pnlControls, BoxLayout.Y_AXIS));
+        pnlControls.setOpaque(false);
+
+        // Row 1: Filter Controls
+        JPanel pnlFilter = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
         pnlFilter.setOpaque(false);
 
         JLabel lblFilterTitle = new JLabel("Rekap Bulanan:");
@@ -180,6 +192,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         btnFilter.setForeground(Color.WHITE);
         btnFilter.setFocusPainted(false);
         btnFilter.setPreferredSize(new Dimension(75, 30));
+        btnFilter.setToolTipText("Terapkan filter bulan, tahun, dan pencarian");
 
         btnSemua = new JButton("SEMUA");
         btnSemua.setFont(new Font("Segoe UI", Font.BOLD, 11));
@@ -187,6 +200,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         btnSemua.setForeground(Color.WHITE);
         btnSemua.setFocusPainted(false);
         btnSemua.setPreferredSize(new Dimension(75, 30));
+        btnSemua.setToolTipText("Tampilkan semua data kehadiran tanpa filter");
 
         btnExportCsv = new JButton("EXPORT CSV");
         btnExportCsv.setFont(new Font("Segoe UI", Font.BOLD, 11));
@@ -204,6 +218,43 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         pnlFilter.add(btnFilter);
         pnlFilter.add(btnSemua);
         pnlFilter.add(btnExportCsv);
+
+        // Row 2: Teacher Search Controls
+        JPanel pnlSearch = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+        pnlSearch.setOpaque(false);
+
+        JLabel lblSearchTitle = new JLabel("Cari Guru:");
+        lblSearchTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lblSearchTitle.setForeground(new Color(50, 50, 50));
+
+        txtCari = new JTextField();
+        txtCari.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        txtCari.setPreferredSize(new Dimension(200, 30));
+        txtCari.setToolTipText("Ketik nama guru untuk mencari...");
+
+        btnCari = new JButton("CARI");
+        btnCari.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnCari.setBackground(new Color(13, 146, 244));
+        btnCari.setForeground(Color.WHITE);
+        btnCari.setFocusPainted(false);
+        btnCari.setPreferredSize(new Dimension(75, 30));
+        btnCari.setToolTipText("Cari kehadiran berdasarkan nama guru");
+
+        btnResetCari = new JButton("RESET");
+        btnResetCari.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        btnResetCari.setBackground(new Color(108, 117, 125));
+        btnResetCari.setForeground(Color.WHITE);
+        btnResetCari.setFocusPainted(false);
+        btnResetCari.setPreferredSize(new Dimension(75, 30));
+        btnResetCari.setToolTipText("Reset pencarian nama guru");
+
+        pnlSearch.add(lblSearchTitle);
+        pnlSearch.add(txtCari);
+        pnlSearch.add(btnCari);
+        pnlSearch.add(btnResetCari);
+
+        pnlControls.add(pnlFilter);
+        pnlControls.add(pnlSearch);
 
         // Right Panel: Summary Cards
         JPanel pnlCards = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 2));
@@ -234,13 +285,13 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         pnlCards.add(cardTidakHadir);
         pnlCards.add(cardPersentase);
 
-        panelSummary.add(pnlFilter, BorderLayout.WEST);
+        panelSummary.add(pnlControls, BorderLayout.WEST);
         panelSummary.add(pnlCards, BorderLayout.EAST);
 
         // Add panelSummary to the NORTH region of FormDataAbsensi
         add(panelSummary, BorderLayout.NORTH);
 
-        // Register action listeners for interactive filtering
+        // Register action listeners for interactive filtering and searching
         cbBulan.addActionListener(e -> {
             updateMonthlySummary();
             if (isTableFiltered) {
@@ -266,11 +317,36 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
         btnSemua.addActionListener(e -> {
             isTableFiltered = false;
+            if (txtCari != null) {
+                txtCari.setText("");
+            }
             tampilkanSemuaDataAbsensiGuru();
             setupTableSorter();
+            updateMonthlySummary();
         });
 
         btnExportCsv.addActionListener(e -> exportAttendanceCsv());
+
+        btnCari.addActionListener(e -> {
+            tampilkanDataAbsensiGuru();
+            setupTableSorter();
+            updateMonthlySummary();
+        });
+
+        txtCari.addActionListener(e -> {
+            tampilkanDataAbsensiGuru();
+            setupTableSorter();
+            updateMonthlySummary();
+        });
+
+        btnResetCari.addActionListener(e -> {
+            if (txtCari != null) {
+                txtCari.setText("");
+            }
+            tampilkanDataAbsensiGuru();
+            setupTableSorter();
+            updateMonthlySummary();
+        });
     }
 
     private JPanel createSummaryCard(String title, Color headerColor, Color bgColor, Color borderColor) {
@@ -330,10 +406,11 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     }
 
     /**
-     * Recalculates monthly summary statistics using currently selected month & year.
+     * Recalculates monthly summary statistics using currently selected month & year
+     * and any active teacher name search filter.
      */
     public void updateMonthlySummary() {
-        updateMonthlySummary(getSelectedBulan(), getSelectedTahun());
+        updateMonthlySummary(getSelectedBulan(), getSelectedTahun(), getSearchKeyword());
     }
 
     /**
@@ -341,19 +418,39 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
      * Computes Total Hadir, Total Tidak Hadir, and Attendance Percentage.
      */
     public void updateMonthlySummary(int bulan, int tahun) {
+        updateMonthlySummary(bulan, tahun, getSearchKeyword());
+    }
+
+    /**
+     * Aggregates attendance records from database for specified month, year, and optional teacher name filter.
+     * Computes Total Hadir, Total Tidak Hadir, and Attendance Percentage.
+     */
+    public void updateMonthlySummary(int bulan, int tahun, String teacherName) {
         int hadir = 0;
         int tidakHadir = 0;
+        String keyword = (teacherName != null) ? teacherName.trim() : "";
 
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
             if (conn != null) {
-                String sql = "SELECT kehadiran, COUNT(*) AS jumlah " +
-                             "FROM tb_kehadiran_guru " +
-                             "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
-                             "GROUP BY kehadiran";
+                String sql;
+                if (keyword.isEmpty()) {
+                    sql = "SELECT kehadiran, COUNT(*) AS jumlah " +
+                          "FROM tb_kehadiran_guru " +
+                          "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
+                          "GROUP BY kehadiran";
+                } else {
+                    sql = "SELECT kehadiran, COUNT(*) AS jumlah " +
+                          "FROM tb_kehadiran_guru " +
+                          "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ? " +
+                          "GROUP BY kehadiran";
+                }
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
                     ps.setInt(1, tahun);
                     ps.setInt(2, bulan);
+                    if (!keyword.isEmpty()) {
+                        ps.setString(3, "%" + keyword + "%");
+                    }
                     try (ResultSet rs = ps.executeQuery()) {
                         while (rs.next()) {
                             String status = rs.getString("kehadiran");
@@ -428,25 +525,77 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     }
     
     public void tampilkanDataAbsensiGuru() {
+        String keyword = getSearchKeyword();
         if (isTableFiltered) {
-            tampilkanDataAbsensiGuru(getSelectedBulan(), getSelectedTahun());
+            tampilkanDataAbsensiGuru(getSelectedBulan(), getSelectedTahun(), keyword);
         } else {
-            tampilkanSemuaDataAbsensiGuru();
+            tampilkanSemuaDataAbsensiGuru(keyword);
         }
     }
 
     public void tampilkanSemuaDataAbsensiGuru() {
+        tampilkanSemuaDataAbsensiGuru(getSearchKeyword());
+    }
+
+    public void tampilkanSemuaDataAbsensiGuru(String teacherName) {
         isTableFiltered = false;
-        loadTableData("SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru ORDER BY waktu DESC, id_kehadiran DESC", null);
+        String keyword = (teacherName != null) ? teacherName.trim() : "";
+        if (keyword.isEmpty()) {
+            loadTableData("SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru ORDER BY waktu DESC, id_kehadiran DESC", (Object[]) null);
+        } else {
+            String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
+                         "WHERE nama LIKE ? " +
+                         "ORDER BY waktu DESC, id_kehadiran DESC";
+            loadTableData(sql, new Object[]{"%" + keyword + "%"});
+        }
     }
 
     public void tampilkanDataAbsensiGuru(int bulan, int tahun) {
+        tampilkanDataAbsensiGuru(bulan, tahun, getSearchKeyword());
+    }
+
+    public void tampilkanDataAbsensiGuru(int bulan, int tahun, String teacherName) {
         isTableFiltered = true;
-        String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? ORDER BY waktu DESC, id_kehadiran DESC";
-        loadTableData(sql, new int[]{tahun, bulan});
+        String keyword = (teacherName != null) ? teacherName.trim() : "";
+        if (keyword.isEmpty()) {
+            String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
+                         "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
+                         "ORDER BY waktu DESC, id_kehadiran DESC";
+            loadTableData(sql, new Object[]{tahun, bulan});
+        } else {
+            String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
+                         "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ? " +
+                         "ORDER BY waktu DESC, id_kehadiran DESC";
+            loadTableData(sql, new Object[]{tahun, bulan, "%" + keyword + "%"});
+        }
+    }
+
+    public void cariData(String keyword) {
+        if (txtCari != null) {
+            txtCari.setText(keyword != null ? keyword : "");
+        }
+        tampilkanDataAbsensiGuru();
+        setupTableSorter();
+        updateMonthlySummary();
+    }
+
+    public void cariDataGuru(String keyword) {
+        cariData(keyword);
     }
 
     private void loadTableData(String sql, int[] params) {
+        if (params == null) {
+            loadTableData(sql, (Object[]) null);
+        } else {
+            Object[] objParams = new Object[params.length];
+            for (int i = 0; i < params.length; i++) {
+                objParams[i] = params[i];
+            }
+            loadTableData(sql, objParams);
+        }
+    }
+
+    private void loadTableData(String sql, Object[] params) {
         DefaultTableModel model = new DefaultTableModel() {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -467,7 +616,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
                 try (PreparedStatement ps = conn.prepareStatement(sql)) {
                     if (params != null) {
                         for (int i = 0; i < params.length; i++) {
-                            ps.setInt(i + 1, params[i]);
+                            ps.setObject(i + 1, params[i]);
                         }
                     }
                     try (ResultSet rs = ps.executeQuery()) {
@@ -606,6 +755,59 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         setupTableSorter();
     }
 
+    public void filterBulanan(int bulan, int tahun, String teacherName) {
+        setKeywordCari(teacherName);
+        setFilterBulanTahun(bulan, tahun);
+        tampilkanDataAbsensiGuru(bulan, tahun, teacherName);
+        setupTableSorter();
+    }
+
+    public void filterGuru(String teacherName) {
+        cariData(teacherName);
+    }
+
+    public JTextField getTxtCari() {
+        return txtCari;
+    }
+
+    public JTextField getSearchTxt() {
+        return txtCari;
+    }
+
+    public JButton getBtnCari() {
+        return btnCari;
+    }
+
+    public JButton getBtnResetCari() {
+        return btnResetCari;
+    }
+
+    public void setKeywordCari(String keyword) {
+        if (txtCari != null) {
+            txtCari.setText(keyword != null ? keyword : "");
+        }
+    }
+
+    /**
+     * Retrieves the current search keyword from txtCari.
+     * Trims leading and trailing whitespace.
+     * Returns empty string if empty or set to placeholder.
+     *
+     * @return trimmed search keyword
+     */
+    public String getSearchKeyword() {
+        if (txtCari != null) {
+            String text = txtCari.getText();
+            if (text != null) {
+                String trimmed = text.trim();
+                if (!trimmed.isEmpty() && !trimmed.equalsIgnoreCase("Search")) {
+                    return trimmed;
+                }
+            }
+        }
+        return "";
+    }
+
     public JButton getBtnExportCsv() {
         return btnExportCsv;
     }
@@ -618,21 +820,33 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     public void exportAttendanceCsv() {
         int bulan = getSelectedBulan();
         int tahun = getSelectedTahun();
+        String keyword = getSearchKeyword();
 
-        // Check if there are any records for the selected month & year first
+        // Check if there are any records for the selected month & year (and teacher name if filtered) first
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
             if (conn != null) {
-                String checkSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?";
+                String checkSql;
+                if (keyword.isEmpty()) {
+                    checkSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?";
+                } else {
+                    checkSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ?";
+                }
                 try (PreparedStatement ps = conn.prepareStatement(checkSql)) {
                     ps.setInt(1, tahun);
                     ps.setInt(2, bulan);
+                    if (!keyword.isEmpty()) {
+                        ps.setString(3, "%" + keyword + "%");
+                    }
                     try (ResultSet rs = ps.executeQuery()) {
                         if (rs.next() && rs.getInt(1) == 0) {
                             String namaBulan = (bulan >= 1 && bulan <= 12) ? NAMA_BULAN[bulan - 1] : String.valueOf(bulan);
+                            String infoMsg = keyword.isEmpty()
+                                ? "Tidak ada data kehadiran untuk periode " + namaBulan + " " + tahun + "."
+                                : "Tidak ada data kehadiran untuk guru \"" + keyword + "\" pada periode " + namaBulan + " " + tahun + ".";
                             JOptionPane.showMessageDialog(
                                 this,
-                                "Tidak ada data kehadiran untuk periode " + namaBulan + " " + tahun + ".",
+                                infoMsg,
                                 "Informasi Ekspor",
                                 JOptionPane.INFORMATION_MESSAGE
                             );
@@ -648,7 +862,10 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         }
 
         // Configure file chooser with default filename
-        String defaultFileName = String.format("teacher_attendance_%04d_%02d.csv", tahun, bulan);
+        String defaultFileName = keyword.isEmpty()
+            ? String.format("teacher_attendance_%04d_%02d.csv", tahun, bulan)
+            : String.format("teacher_attendance_%s_%04d_%02d.csv", keyword.replaceAll("[^a-zA-Z0-9_-]", "_"), tahun, bulan);
+
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Simpan File CSV Kehadiran Guru");
         fileChooser.setSelectedFile(new File(defaultFileName));
@@ -685,7 +902,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
         // Perform CSV file export
         try {
-            int count = exportAttendanceToCsv(selectedFile, bulan, tahun);
+            int count = exportAttendanceToCsv(selectedFile, bulan, tahun, keyword);
             JOptionPane.showMessageDialog(
                 this,
                 "Data kehadiran guru (" + count + " data) berhasil diekspor ke:\n" + selectedFile.getAbsolutePath(),
@@ -714,19 +931,47 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
      * @throws SQLException on database query error
      */
     public int exportAttendanceToCsv(File targetFile, int bulan, int tahun) throws IOException, SQLException {
+        return exportAttendanceToCsv(targetFile, bulan, tahun, null);
+    }
+
+    /**
+     * Programmatically exports teacher attendance records for the specified month, year, and optional teacher name
+     * to the given destination CSV file.
+     * Compatible with Microsoft Excel (UTF-8 BOM, standard CRLF, RFC 4180 quoting).
+     *
+     * @param targetFile destination CSV file
+     * @param bulan month (1-12)
+     * @param tahun year (e.g. 2026)
+     * @param teacherName optional teacher name filter (empty/null for all)
+     * @return number of records exported
+     * @throws IOException on file write error
+     * @throws SQLException on database query error
+     */
+    public int exportAttendanceToCsv(File targetFile, int bulan, int tahun, String teacherName) throws IOException, SQLException {
         Connection conn = KoneksiDatabase.getKoneksi();
         if (conn == null) {
             throw new SQLException("Database connection is not available.");
         }
 
-        String sql = "SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru " +
-                     "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
-                     "ORDER BY waktu ASC, nama ASC";
+        String keyword = (teacherName != null) ? teacherName.trim() : "";
+        String sql;
+        if (keyword.isEmpty()) {
+            sql = "SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru " +
+                  "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
+                  "ORDER BY waktu ASC, nama ASC";
+        } else {
+            sql = "SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru " +
+                  "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ? " +
+                  "ORDER BY waktu ASC, nama ASC";
+        }
 
         int count = 0;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, tahun);
             ps.setInt(2, bulan);
+            if (!keyword.isEmpty()) {
+                ps.setString(3, "%" + keyword + "%");
+            }
 
             try (ResultSet rs = ps.executeQuery();
                  FileOutputStream fos = new FileOutputStream(targetFile);
