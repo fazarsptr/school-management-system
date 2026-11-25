@@ -87,6 +87,11 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     private javax.swing.JLabel lblFilteredHadir;
     private javax.swing.JLabel lblFilteredTidakHadir;
 
+    // Empty-state UI components
+    private javax.swing.JPanel pnlEmptyState;
+    private javax.swing.JLabel lblEmptyState;
+    private boolean isQueryError = false;
+
     private static final String[] NAMA_BULAN = {
         "Januari", "Februari", "Maret", "April", "Mei", "Juni",
         "Juli", "Agustus", "September", "Oktober", "November", "Desember"
@@ -335,8 +340,22 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         pnlCards.add(cardTidakHadir);
         pnlCards.add(cardPersentase);
 
+        // Empty state banner
+        pnlEmptyState = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 6));
+        pnlEmptyState.setBackground(new Color(255, 243, 205));
+        pnlEmptyState.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(255, 238, 186)),
+            BorderFactory.createEmptyBorder(6, 12, 6, 12)
+        ));
+        lblEmptyState = new JLabel("Tidak ada data absensi yang sesuai dengan filter.");
+        lblEmptyState.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lblEmptyState.setForeground(new Color(133, 100, 4));
+        pnlEmptyState.add(lblEmptyState);
+        pnlEmptyState.setVisible(false);
+
         panelSummary.add(pnlControls, BorderLayout.WEST);
         panelSummary.add(pnlCards, BorderLayout.EAST);
+        panelSummary.add(pnlEmptyState, BorderLayout.SOUTH);
 
         // Add panelSummary to the NORTH region of FormDataAbsensi
         add(panelSummary, BorderLayout.NORTH);
@@ -758,13 +777,27 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
                         }
                     }
                 }
+            } else {
+                this.isQueryError = true;
+                hideEmptyState();
+                System.err.println("Database connection is not available.");
+                return;
             }
-            
+
+            this.isQueryError = false;
             tableDataAbsen.setModel(model);
             applyTableFormatting();
             updateFilteredTotals();
-            
+
+            if (model.getRowCount() == 0) {
+                showEmptyState("Tidak ada data absensi yang sesuai dengan filter.");
+            } else {
+                hideEmptyState();
+            }
+
         } catch (SQLException e) {
+            this.isQueryError = true;
+            hideEmptyState();
             System.err.println("Error displaying attendance data: " + e.getMessage());
             JOptionPane.showMessageDialog(this, "Gagal menampilkan data kehadiran guru: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
         }
@@ -1033,6 +1066,53 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
     public JPanel getPnlFilteredTotals() {
         return pnlFilteredTotals;
+    }
+
+    public void showEmptyState() {
+        showEmptyState("Tidak ada data absensi yang sesuai dengan filter.");
+    }
+
+    public void showEmptyState(String message) {
+        if (lblEmptyState != null) {
+            lblEmptyState.setText(message != null ? message : "Tidak ada data absensi yang sesuai dengan filter.");
+        }
+        if (pnlEmptyState != null) {
+            pnlEmptyState.setVisible(true);
+            if (panelSummary != null) {
+                panelSummary.revalidate();
+                panelSummary.repaint();
+            }
+        }
+    }
+
+    public void hideEmptyState() {
+        if (pnlEmptyState != null) {
+            pnlEmptyState.setVisible(false);
+            if (panelSummary != null) {
+                panelSummary.revalidate();
+                panelSummary.repaint();
+            }
+        }
+    }
+
+    public boolean isEmptyStateVisible() {
+        return pnlEmptyState != null && pnlEmptyState.isVisible();
+    }
+
+    public JPanel getPnlEmptyState() {
+        return pnlEmptyState;
+    }
+
+    public JLabel getLblEmptyState() {
+        return lblEmptyState;
+    }
+
+    public String getEmptyStateMessage() {
+        return lblEmptyState != null ? lblEmptyState.getText() : "";
+    }
+
+    public boolean isQueryError() {
+        return isQueryError;
     }
 
     public JButton getBtnCari() {
