@@ -78,6 +78,15 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         "Semua Status", "Hadir", "Tidak Hadir"
     };
 
+    // Filtered attendance totals UI components
+    private int filteredTotalData = 0;
+    private int filteredTotalHadir = 0;
+    private int filteredTotalTidakHadir = 0;
+    private javax.swing.JPanel pnlFilteredTotals;
+    private javax.swing.JLabel lblFilteredTotalData;
+    private javax.swing.JLabel lblFilteredHadir;
+    private javax.swing.JLabel lblFilteredTidakHadir;
+
     private static final String[] NAMA_BULAN = {
         "Januari", "Februari", "Maret", "April", "Mei", "Juni",
         "Juli", "Agustus", "September", "Oktober", "November", "Desember"
@@ -88,6 +97,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         tampilkanDataAbsensiGuru();
         setupTableSorter();
         updateMonthlySummary();
+        updateFilteredTotals();
     }
 
     public FormDataAbsensi() {
@@ -96,6 +106,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         tampilkanDataAbsensiGuru();
         setupTableSorter();
         updateMonthlySummary();
+        updateFilteredTotals();
     }
 
     /**
@@ -272,6 +283,29 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         pnlControls.add(pnlFilter);
         pnlControls.add(pnlSearch);
 
+        // Row 3: Filtered Attendance Totals
+        pnlFilteredTotals = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+        pnlFilteredTotals.setOpaque(false);
+
+        JLabel lblFilteredTitle = new JLabel("Data Terfilter:");
+        lblFilteredTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        lblFilteredTitle.setForeground(new Color(50, 50, 50));
+
+        lblFilteredTotalData = new JLabel("0");
+        lblFilteredHadir = new JLabel("0");
+        lblFilteredTidakHadir = new JLabel("0");
+
+        JPanel badgeTotal = createBadge("Total Data:", lblFilteredTotalData, new Color(50, 50, 50), new Color(245, 245, 245), new Color(210, 215, 220));
+        JPanel badgeHadir = createBadge("Hadir:", lblFilteredHadir, new Color(46, 125, 50), new Color(232, 245, 233), new Color(200, 230, 201));
+        JPanel badgeTidakHadir = createBadge("Tidak Hadir:", lblFilteredTidakHadir, new Color(198, 40, 40), new Color(255, 235, 238), new Color(255, 205, 210));
+
+        pnlFilteredTotals.add(lblFilteredTitle);
+        pnlFilteredTotals.add(badgeTotal);
+        pnlFilteredTotals.add(badgeHadir);
+        pnlFilteredTotals.add(badgeTidakHadir);
+
+        pnlControls.add(pnlFilteredTotals);
+
         // Right Panel: Summary Cards
         JPanel pnlCards = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 2));
         pnlCards.setOpaque(false);
@@ -391,6 +425,26 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         card.add(lblTitle, BorderLayout.NORTH);
 
         return card;
+    }
+
+    private JPanel createBadge(String title, JLabel valueLabel, Color textColor, Color bgColor, Color borderColor) {
+        JPanel badge = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 2));
+        badge.setBackground(bgColor);
+        badge.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(borderColor, 1, true),
+            BorderFactory.createEmptyBorder(2, 6, 2, 6)
+        ));
+
+        JLabel lblTitle = new JLabel(title);
+        lblTitle.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        lblTitle.setForeground(textColor);
+
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        valueLabel.setForeground(textColor);
+
+        badge.add(lblTitle);
+        badge.add(valueLabel);
+        return badge;
     }
 
     /**
@@ -518,6 +572,9 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     private void setupTableSorter() {
         DefaultTableModel model = (DefaultTableModel) tableDataAbsen.getModel();
         sorter = new TableRowSorter<>(model);
+        sorter.addRowSorterListener(e -> {
+            updateFilteredTotals();
+        });
         tableDataAbsen.setRowSorter(sorter);
         
         // Menambahkan MouseListener pada header tabel
@@ -549,6 +606,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         tampilkanDataAbsensiGuru();
         setupTableSorter();
         updateMonthlySummary();
+        updateFilteredTotals();
     }
     
     public void tampilkanDataAbsensiGuru() {
@@ -704,10 +762,67 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
             
             tableDataAbsen.setModel(model);
             applyTableFormatting();
+            updateFilteredTotals();
             
         } catch (SQLException e) {
             System.err.println("Error displaying attendance data: " + e.getMessage());
             JOptionPane.showMessageDialog(this, "Gagal menampilkan data kehadiran guru: " + e.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * Calculates and updates the concise summary of currently visible attendance records
+     * (Total Data, Hadir, and Tidak Hadir) directly from the existing table data.
+     */
+    public void updateFilteredTotals() {
+        int total = 0;
+        int hadir = 0;
+        int tidakHadir = 0;
+
+        if (tableDataAbsen != null && tableDataAbsen.getModel() != null) {
+            DefaultTableModel model = (DefaultTableModel) tableDataAbsen.getModel();
+            if (tableDataAbsen.getRowSorter() != null && tableDataAbsen.getRowSorter().getViewRowCount() >= 0) {
+                total = tableDataAbsen.getRowCount();
+                for (int i = 0; i < total; i++) {
+                    int modelRow = tableDataAbsen.convertRowIndexToModel(i);
+                    Object val = model.getValueAt(modelRow, 2);
+                    if (val != null) {
+                        String status = val.toString().trim();
+                        if ("Hadir".equalsIgnoreCase(status)) {
+                            hadir++;
+                        } else if ("Tidak Hadir".equalsIgnoreCase(status)) {
+                            tidakHadir++;
+                        }
+                    }
+                }
+            } else {
+                total = model.getRowCount();
+                for (int i = 0; i < total; i++) {
+                    Object val = model.getValueAt(i, 2);
+                    if (val != null) {
+                        String status = val.toString().trim();
+                        if ("Hadir".equalsIgnoreCase(status)) {
+                            hadir++;
+                        } else if ("Tidak Hadir".equalsIgnoreCase(status)) {
+                            tidakHadir++;
+                        }
+                    }
+                }
+            }
+        }
+
+        this.filteredTotalData = total;
+        this.filteredTotalHadir = hadir;
+        this.filteredTotalTidakHadir = tidakHadir;
+
+        if (lblFilteredTotalData != null) {
+            lblFilteredTotalData.setText(String.valueOf(total));
+        }
+        if (lblFilteredHadir != null) {
+            lblFilteredHadir.setText(String.valueOf(hadir));
+        }
+        if (lblFilteredTidakHadir != null) {
+            lblFilteredTidakHadir.setText(String.valueOf(tidakHadir));
         }
     }
 
@@ -874,6 +989,50 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
                 }
             }
         }
+    }
+
+    public int getFilteredTotalData() {
+        return filteredTotalData;
+    }
+
+    public int getTotalData() {
+        return filteredTotalData;
+    }
+
+    public int getFilteredTotalHadir() {
+        return filteredTotalHadir;
+    }
+
+    public int getFilteredHadir() {
+        return filteredTotalHadir;
+    }
+
+    public int getFilteredTotalTidakHadir() {
+        return filteredTotalTidakHadir;
+    }
+
+    public int getFilteredTidakHadir() {
+        return filteredTotalTidakHadir;
+    }
+
+    public JLabel getLblFilteredTotalData() {
+        return lblFilteredTotalData;
+    }
+
+    public JLabel getLblTotalData() {
+        return lblFilteredTotalData;
+    }
+
+    public JLabel getLblFilteredHadir() {
+        return lblFilteredHadir;
+    }
+
+    public JLabel getLblFilteredTidakHadir() {
+        return lblFilteredTidakHadir;
+    }
+
+    public JPanel getPnlFilteredTotals() {
+        return pnlFilteredTotals;
     }
 
     public JButton getBtnCari() {
