@@ -10,6 +10,48 @@ A Java Swing-based School Management System for managing student records, teache
 - Dashboard and JasperReports reporting screens
 - Database-backed login using PBKDF2 password hashing
 
+## Teacher Attendance Reporting
+
+The teacher attendance module (`FormDataAbsensi`) provides comprehensive reporting, interactive filtering, and export capabilities for faculty attendance tracking:
+
+### Implemented Features
+
+- **Month and Year Filtering (`Rekap Bulanan`)**: Select a specific month and year via dropdowns and click **FILTER** to load records for that period. Click **SEMUA** to reset the date filter and view all historical records.
+- **Teacher Name Search (`Cari Guru`)**: Search attendance records by teacher name with partial string matching (`LIKE %keyword%`). Trigger search by clicking **CARI** or pressing Enter in the search field.
+- **Attendance Status Filtering (`Status`)**: Filter records by attendance category:
+  - `Semua Status` (All records)
+  - `Hadir` (Present)
+  - `Tidak Hadir` (Absent)
+  Selecting a status instantly filters the displayed attendance list.
+- **Filtered Attendance Totals (`Data Terfilter`)**: Displays immediate badge counters reflecting the visible records in the table:
+  - **Total Data**: Total records matching the active filter criteria.
+  - **Hadir**: Count of present records in the filtered view.
+  - **Tidak Hadir**: Count of absent records in the filtered view.
+  Counters update dynamically upon any filter change and reset to zero when no records match.
+- **Monthly Attendance Summary Cards**: Visual overview cards for the selected month and year:
+  - **TOTAL HADIR**: Total present count for the month.
+  - **TOTAL TIDAK HADIR**: Total absent count for the month.
+  - **PERSENTASE**: Monthly attendance rate calculated from database records.
+- **Empty-State Handling**: If search or filter parameters yield zero matching records:
+  - Displays a clear notice banner: *"Tidak ada data absensi yang sesuai dengan filter."*
+  - Automatically clears stale rows from the table view.
+  - Banner hides automatically as soon as matching records become available.
+  - Database or SQL errors are distinguished from empty results, showing an error dialog rather than an empty-state message.
+- **CSV Export (`EXPORT CSV`)**: Exports the currently filtered attendance dataset (Teacher Name, Attendance Status, Date) to a Microsoft Excel-compatible CSV file:
+  - Prompts the user with a `JFileChooser` and suggests default filenames (`teacher_attendance_YYYY_MM.csv`).
+  - Confirms before overwriting existing files.
+  - Handles CSV escaping (commas, quotation marks, line breaks) safely.
+
+### How to Use
+
+1. Navigate to the **Data Absensi Guru** screen from the application menu.
+2. **Filter by Period**: Select the desired month from the **Bulan** dropdown and year from the **Tahun** dropdown, then click **FILTER**.
+3. **Filter by Name or Status**: Enter a partial or full teacher name in the **Cari Guru** field and/or select a status from the **Status** dropdown. Click **CARI** or press Enter. To clear filters, click **RESET** or **SEMUA**.
+4. **View Statistics**: Check the **Data Terfilter** badges for instant visible counts or the summary cards on the right for monthly percentage aggregates.
+5. **Export to CSV**: Click **EXPORT CSV**, choose a target directory, specify or confirm the filename, and save.
+
+> **Note on Verification**: All reporting logic, SQL parameterization, Swing layouts, and helper routines are fully implemented in code and verified via static analysis and Git diff inspections. Full end-to-end runtime verification requires a configured local MySQL instance and desktop Swing environment (see [Local setup](#local-setup)).
+
 ## Technology
 
 Java Swing (Java 8 source compatibility), Apache NetBeans/Ant, MySQL or MariaDB, JDBC, and JasperReports.
