@@ -68,10 +68,15 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     private javax.swing.JLabel lblTotalTidakHadir;
     private javax.swing.JLabel lblPersentase;
 
-    // Teacher search UI components
+    // Teacher search and status filter UI components
     private javax.swing.JTextField txtCari;
+    private javax.swing.JComboBox<String> cbStatus;
     private javax.swing.JButton btnCari;
     private javax.swing.JButton btnResetCari;
+
+    private static final String[] STATUS_KEHADIRAN = {
+        "Semua Status", "Hadir", "Tidak Hadir"
+    };
 
     private static final String[] NAMA_BULAN = {
         "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -219,7 +224,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         pnlFilter.add(btnSemua);
         pnlFilter.add(btnExportCsv);
 
-        // Row 2: Teacher Search Controls
+        // Row 2: Teacher Search and Status Filter Controls
         JPanel pnlSearch = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
         pnlSearch.setOpaque(false);
 
@@ -229,15 +234,24 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
         txtCari = new JTextField();
         txtCari.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        txtCari.setPreferredSize(new Dimension(200, 30));
+        txtCari.setPreferredSize(new Dimension(170, 30));
         txtCari.setToolTipText("Ketik nama guru untuk mencari...");
+
+        JLabel lblStatusTitle = new JLabel("Status:");
+        lblStatusTitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lblStatusTitle.setForeground(new Color(50, 50, 50));
+
+        cbStatus = new JComboBox<>(STATUS_KEHADIRAN);
+        cbStatus.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        cbStatus.setPreferredSize(new Dimension(120, 30));
+        cbStatus.setToolTipText("Filter berdasarkan status kehadiran guru");
 
         btnCari = new JButton("CARI");
         btnCari.setFont(new Font("Segoe UI", Font.BOLD, 11));
         btnCari.setBackground(new Color(13, 146, 244));
         btnCari.setForeground(Color.WHITE);
         btnCari.setFocusPainted(false);
-        btnCari.setPreferredSize(new Dimension(75, 30));
+        btnCari.setPreferredSize(new Dimension(70, 30));
         btnCari.setToolTipText("Cari kehadiran berdasarkan nama guru");
 
         btnResetCari = new JButton("RESET");
@@ -245,11 +259,13 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         btnResetCari.setBackground(new Color(108, 117, 125));
         btnResetCari.setForeground(Color.WHITE);
         btnResetCari.setFocusPainted(false);
-        btnResetCari.setPreferredSize(new Dimension(75, 30));
-        btnResetCari.setToolTipText("Reset pencarian nama guru");
+        btnResetCari.setPreferredSize(new Dimension(70, 30));
+        btnResetCari.setToolTipText("Reset pencarian dan filter status");
 
         pnlSearch.add(lblSearchTitle);
         pnlSearch.add(txtCari);
+        pnlSearch.add(lblStatusTitle);
+        pnlSearch.add(cbStatus);
         pnlSearch.add(btnCari);
         pnlSearch.add(btnResetCari);
 
@@ -320,6 +336,9 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
             if (txtCari != null) {
                 txtCari.setText("");
             }
+            if (cbStatus != null) {
+                cbStatus.setSelectedIndex(0);
+            }
             tampilkanSemuaDataAbsensiGuru();
             setupTableSorter();
             updateMonthlySummary();
@@ -339,9 +358,17 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
             updateMonthlySummary();
         });
 
+        cbStatus.addActionListener(e -> {
+            tampilkanDataAbsensiGuru();
+            setupTableSorter();
+        });
+
         btnResetCari.addActionListener(e -> {
             if (txtCari != null) {
                 txtCari.setText("");
+            }
+            if (cbStatus != null) {
+                cbStatus.setSelectedIndex(0);
             }
             tampilkanDataAbsensiGuru();
             setupTableSorter();
@@ -526,48 +553,83 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     
     public void tampilkanDataAbsensiGuru() {
         String keyword = getSearchKeyword();
+        String status = getSelectedStatus();
         if (isTableFiltered) {
-            tampilkanDataAbsensiGuru(getSelectedBulan(), getSelectedTahun(), keyword);
+            tampilkanDataAbsensiGuru(getSelectedBulan(), getSelectedTahun(), keyword, status);
         } else {
-            tampilkanSemuaDataAbsensiGuru(keyword);
+            tampilkanSemuaDataAbsensiGuru(keyword, status);
         }
     }
 
     public void tampilkanSemuaDataAbsensiGuru() {
-        tampilkanSemuaDataAbsensiGuru(getSearchKeyword());
+        tampilkanSemuaDataAbsensiGuru(getSearchKeyword(), getSelectedStatus());
     }
 
     public void tampilkanSemuaDataAbsensiGuru(String teacherName) {
+        tampilkanSemuaDataAbsensiGuru(teacherName, getSelectedStatus());
+    }
+
+    public void tampilkanSemuaDataAbsensiGuru(String teacherName, String status) {
         isTableFiltered = false;
         String keyword = (teacherName != null) ? teacherName.trim() : "";
-        if (keyword.isEmpty()) {
-            loadTableData("SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru ORDER BY waktu DESC, id_kehadiran DESC", (Object[]) null);
-        } else {
-            String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
-                         "WHERE nama LIKE ? " +
-                         "ORDER BY waktu DESC, id_kehadiran DESC";
-            loadTableData(sql, new Object[]{"%" + keyword + "%"});
+        String st = (status != null) ? status.trim() : "";
+        if ("Semua Status".equalsIgnoreCase(st)) {
+            st = "";
         }
+
+        StringBuilder sql = new StringBuilder("SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru");
+        List<Object> params = new ArrayList<>();
+        boolean hasWhere = false;
+
+        if (!keyword.isEmpty()) {
+            sql.append(hasWhere ? " AND" : " WHERE").append(" nama LIKE ?");
+            params.add("%" + keyword + "%");
+            hasWhere = true;
+        }
+
+        if (!st.isEmpty()) {
+            sql.append(hasWhere ? " AND" : " WHERE").append(" kehadiran = ?");
+            params.add(st);
+            hasWhere = true;
+        }
+
+        sql.append(" ORDER BY waktu DESC, id_kehadiran DESC");
+        loadTableData(sql.toString(), params.isEmpty() ? null : params.toArray());
     }
 
     public void tampilkanDataAbsensiGuru(int bulan, int tahun) {
-        tampilkanDataAbsensiGuru(bulan, tahun, getSearchKeyword());
+        tampilkanDataAbsensiGuru(bulan, tahun, getSearchKeyword(), getSelectedStatus());
     }
 
     public void tampilkanDataAbsensiGuru(int bulan, int tahun, String teacherName) {
+        tampilkanDataAbsensiGuru(bulan, tahun, teacherName, getSelectedStatus());
+    }
+
+    public void tampilkanDataAbsensiGuru(int bulan, int tahun, String teacherName, String status) {
         isTableFiltered = true;
         String keyword = (teacherName != null) ? teacherName.trim() : "";
-        if (keyword.isEmpty()) {
-            String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
-                         "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
-                         "ORDER BY waktu DESC, id_kehadiran DESC";
-            loadTableData(sql, new Object[]{tahun, bulan});
-        } else {
-            String sql = "SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru " +
-                         "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ? " +
-                         "ORDER BY waktu DESC, id_kehadiran DESC";
-            loadTableData(sql, new Object[]{tahun, bulan, "%" + keyword + "%"});
+        String st = (status != null) ? status.trim() : "";
+        if ("Semua Status".equalsIgnoreCase(st)) {
+            st = "";
         }
+
+        StringBuilder sql = new StringBuilder("SELECT id_kehadiran, nama, kehadiran, waktu FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(tahun);
+        params.add(bulan);
+
+        if (!keyword.isEmpty()) {
+            sql.append(" AND nama LIKE ?");
+            params.add("%" + keyword + "%");
+        }
+
+        if (!st.isEmpty()) {
+            sql.append(" AND kehadiran = ?");
+            params.add(st);
+        }
+
+        sql.append(" ORDER BY waktu DESC, id_kehadiran DESC");
+        loadTableData(sql.toString(), params.toArray());
     }
 
     public void cariData(String keyword) {
@@ -581,6 +643,12 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
     public void cariDataGuru(String keyword) {
         cariData(keyword);
+    }
+
+    public void filterStatus(String status) {
+        setSelectedStatus(status);
+        tampilkanDataAbsensiGuru();
+        setupTableSorter();
     }
 
     private void loadTableData(String sql, int[] params) {
@@ -756,9 +824,14 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
     }
 
     public void filterBulanan(int bulan, int tahun, String teacherName) {
+        filterBulanan(bulan, tahun, teacherName, getSelectedStatus());
+    }
+
+    public void filterBulanan(int bulan, int tahun, String teacherName, String status) {
         setKeywordCari(teacherName);
+        setSelectedStatus(status);
         setFilterBulanTahun(bulan, tahun);
-        tampilkanDataAbsensiGuru(bulan, tahun, teacherName);
+        tampilkanDataAbsensiGuru(bulan, tahun, teacherName, status);
         setupTableSorter();
     }
 
@@ -772,6 +845,35 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
     public JTextField getSearchTxt() {
         return txtCari;
+    }
+
+    public JComboBox<String> getCbStatus() {
+        return cbStatus;
+    }
+
+    public String getSelectedStatus() {
+        if (cbStatus != null) {
+            Object item = cbStatus.getSelectedItem();
+            if (item != null) {
+                String val = item.toString().trim();
+                if (!val.isEmpty() && !"Semua Status".equalsIgnoreCase(val)) {
+                    return val;
+                }
+            }
+        }
+        return "";
+    }
+
+    public void setSelectedStatus(String status) {
+        if (cbStatus != null && status != null) {
+            String trimmed = status.trim();
+            for (int i = 0; i < cbStatus.getItemCount(); i++) {
+                if (cbStatus.getItemAt(i).equalsIgnoreCase(trimmed)) {
+                    cbStatus.setSelectedIndex(i);
+                    return;
+                }
+            }
+        }
     }
 
     public JButton getBtnCari() {
@@ -821,32 +923,45 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         int bulan = getSelectedBulan();
         int tahun = getSelectedTahun();
         String keyword = getSearchKeyword();
+        String status = getSelectedStatus();
 
-        // Check if there are any records for the selected month & year (and teacher name if filtered) first
+        // Check if there are any records for the selected month, year, teacher name, and status first
         try {
             Connection conn = KoneksiDatabase.getKoneksi();
             if (conn != null) {
-                String checkSql;
-                if (keyword.isEmpty()) {
-                    checkSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?";
-                } else {
-                    checkSql = "SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ?";
+                StringBuilder checkSql = new StringBuilder("SELECT COUNT(*) FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?");
+                List<Object> checkParams = new ArrayList<>();
+                checkParams.add(tahun);
+                checkParams.add(bulan);
+
+                if (!keyword.isEmpty()) {
+                    checkSql.append(" AND nama LIKE ?");
+                    checkParams.add("%" + keyword + "%");
                 }
-                try (PreparedStatement ps = conn.prepareStatement(checkSql)) {
-                    ps.setInt(1, tahun);
-                    ps.setInt(2, bulan);
-                    if (!keyword.isEmpty()) {
-                        ps.setString(3, "%" + keyword + "%");
+                if (!status.isEmpty()) {
+                    checkSql.append(" AND kehadiran = ?");
+                    checkParams.add(status);
+                }
+
+                try (PreparedStatement ps = conn.prepareStatement(checkSql.toString())) {
+                    for (int i = 0; i < checkParams.size(); i++) {
+                        ps.setObject(i + 1, checkParams.get(i));
                     }
                     try (ResultSet rs = ps.executeQuery()) {
                         if (rs.next() && rs.getInt(1) == 0) {
                             String namaBulan = (bulan >= 1 && bulan <= 12) ? NAMA_BULAN[bulan - 1] : String.valueOf(bulan);
-                            String infoMsg = keyword.isEmpty()
-                                ? "Tidak ada data kehadiran untuk periode " + namaBulan + " " + tahun + "."
-                                : "Tidak ada data kehadiran untuk guru \"" + keyword + "\" pada periode " + namaBulan + " " + tahun + ".";
+                            StringBuilder infoMsg = new StringBuilder("Tidak ada data kehadiran");
+                            if (!status.isEmpty()) {
+                                infoMsg.append(" dengan status \"").append(status).append("\"");
+                            }
+                            if (!keyword.isEmpty()) {
+                                infoMsg.append(" untuk guru \"").append(keyword).append("\"");
+                            }
+                            infoMsg.append(" pada periode ").append(namaBulan).append(" ").append(tahun).append(".");
+
                             JOptionPane.showMessageDialog(
                                 this,
-                                infoMsg,
+                                infoMsg.toString(),
                                 "Informasi Ekspor",
                                 JOptionPane.INFORMATION_MESSAGE
                             );
@@ -862,9 +977,15 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
         }
 
         // Configure file chooser with default filename
-        String defaultFileName = keyword.isEmpty()
-            ? String.format("teacher_attendance_%04d_%02d.csv", tahun, bulan)
-            : String.format("teacher_attendance_%s_%04d_%02d.csv", keyword.replaceAll("[^a-zA-Z0-9_-]", "_"), tahun, bulan);
+        StringBuilder fileNameBuilder = new StringBuilder("teacher_attendance");
+        if (!status.isEmpty()) {
+            fileNameBuilder.append("_").append(status.toLowerCase().replaceAll("[^a-z0-9_-]", "_"));
+        }
+        if (!keyword.isEmpty()) {
+            fileNameBuilder.append("_").append(keyword.replaceAll("[^a-zA-Z0-9_-]", "_"));
+        }
+        fileNameBuilder.append(String.format("_%04d_%02d.csv", tahun, bulan));
+        String defaultFileName = fileNameBuilder.toString();
 
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setDialogTitle("Simpan File CSV Kehadiran Guru");
@@ -902,7 +1023,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
 
         // Perform CSV file export
         try {
-            int count = exportAttendanceToCsv(selectedFile, bulan, tahun, keyword);
+            int count = exportAttendanceToCsv(selectedFile, bulan, tahun, keyword, status);
             JOptionPane.showMessageDialog(
                 this,
                 "Data kehadiran guru (" + count + " data) berhasil diekspor ke:\n" + selectedFile.getAbsolutePath(),
@@ -931,7 +1052,7 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
      * @throws SQLException on database query error
      */
     public int exportAttendanceToCsv(File targetFile, int bulan, int tahun) throws IOException, SQLException {
-        return exportAttendanceToCsv(targetFile, bulan, tahun, null);
+        return exportAttendanceToCsv(targetFile, bulan, tahun, null, null);
     }
 
     /**
@@ -948,29 +1069,54 @@ public class FormDataAbsensi extends javax.swing.JPanel implements DataChangedLi
      * @throws SQLException on database query error
      */
     public int exportAttendanceToCsv(File targetFile, int bulan, int tahun, String teacherName) throws IOException, SQLException {
+        return exportAttendanceToCsv(targetFile, bulan, tahun, teacherName, null);
+    }
+
+    /**
+     * Programmatically exports teacher attendance records for the specified month, year, optional teacher name,
+     * and optional attendance status to the given destination CSV file.
+     * Compatible with Microsoft Excel (UTF-8 BOM, standard CRLF, RFC 4180 quoting).
+     *
+     * @param targetFile destination CSV file
+     * @param bulan month (1-12)
+     * @param tahun year (e.g. 2026)
+     * @param teacherName optional teacher name filter (empty/null for all)
+     * @param status optional attendance status filter (empty/null/Semua Status for all)
+     * @return number of records exported
+     * @throws IOException on file write error
+     * @throws SQLException on database query error
+     */
+    public int exportAttendanceToCsv(File targetFile, int bulan, int tahun, String teacherName, String status) throws IOException, SQLException {
         Connection conn = KoneksiDatabase.getKoneksi();
         if (conn == null) {
             throw new SQLException("Database connection is not available.");
         }
 
         String keyword = (teacherName != null) ? teacherName.trim() : "";
-        String sql;
-        if (keyword.isEmpty()) {
-            sql = "SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru " +
-                  "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? " +
-                  "ORDER BY waktu ASC, nama ASC";
-        } else {
-            sql = "SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru " +
-                  "WHERE YEAR(waktu) = ? AND MONTH(waktu) = ? AND nama LIKE ? " +
-                  "ORDER BY waktu ASC, nama ASC";
+        String st = (status != null) ? status.trim() : "";
+        if ("Semua Status".equalsIgnoreCase(st)) {
+            st = "";
         }
 
+        StringBuilder sql = new StringBuilder("SELECT waktu, nama, kehadiran FROM tb_kehadiran_guru WHERE YEAR(waktu) = ? AND MONTH(waktu) = ?");
+        List<Object> params = new ArrayList<>();
+        params.add(tahun);
+        params.add(bulan);
+
+        if (!keyword.isEmpty()) {
+            sql.append(" AND nama LIKE ?");
+            params.add("%" + keyword + "%");
+        }
+        if (!st.isEmpty()) {
+            sql.append(" AND kehadiran = ?");
+            params.add(st);
+        }
+        sql.append(" ORDER BY waktu ASC, nama ASC");
+
         int count = 0;
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setInt(1, tahun);
-            ps.setInt(2, bulan);
-            if (!keyword.isEmpty()) {
-                ps.setString(3, "%" + keyword + "%");
+        try (PreparedStatement ps = conn.prepareStatement(sql.toString())) {
+            for (int i = 0; i < params.size(); i++) {
+                ps.setObject(i + 1, params.get(i));
             }
 
             try (ResultSet rs = ps.executeQuery();
